@@ -129,6 +129,7 @@ class MainWindow(QMainWindow):
         s.flipClicked.connect(self._on_flip)
         s.suggestionClicked.connect(self._on_suggestion_clicked)
         self.board.moveRequested.connect(self._on_board_move)
+        self.board.backRequested.connect(lambda: self.controller.step(-1))
 
     def _install_shortcuts(self):
         bindings = (

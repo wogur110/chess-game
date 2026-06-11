@@ -382,6 +382,7 @@ class OpeningStudyTab(QWidget):
         root.addWidget(panel)
 
         self.board_widget.moveRequested.connect(self._on_board_move)
+        self.board_widget.backRequested.connect(self.step_back)
         self.moves_panel.moveClicked.connect(self._on_book_move_clicked)
         self.browser.lineSelected.connect(self._on_line_selected)
 

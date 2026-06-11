@@ -96,6 +96,7 @@ class PromotionDialog(QDialog):
 
 class BoardWidget(QWidget):
     moveRequested = Signal(object)   # chess.Move
+    backRequested = Signal()         # right-click: step one move back
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -231,8 +232,13 @@ class BoardWidget(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
+            # With a piece selected or mid-drag, right-click just cancels;
+            # otherwise it steps one move back (same as the Left arrow key).
+            had_selection = self._selected is not None or self._dragging
             self._clear_selection()
             self.update()
+            if not had_selection:
+                self.backRequested.emit()
             return
         if event.button() != Qt.LeftButton:
             return
