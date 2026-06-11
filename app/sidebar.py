@@ -367,7 +367,8 @@ class Sidebar(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setFixedWidth(340)
+        self.setMinimumWidth(290)
+        self.setMaximumWidth(420)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)

@@ -100,7 +100,7 @@ class BoardWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setMinimumSize(320, 320)
+        self.setMinimumSize(260, 260)
         self.setMouseTracking(True)
 
         self._board = chess.Board()

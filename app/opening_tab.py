@@ -12,8 +12,9 @@ from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QScrollArea,
-                               QSizePolicy, QToolButton, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+                               QSizePolicy, QSplitter, QToolButton,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from . import theme
 from .board_widget import BoardWidget
@@ -265,11 +266,15 @@ class OpeningStudyTab(QWidget):
 
         root = QHBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
-        root.setSpacing(14)
+        root.setSpacing(0)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(10)
+        root.addWidget(splitter)
 
         # Left: browser
         browser_panel = QWidget()
-        browser_panel.setFixedWidth(280)
+        browser_panel.setMinimumWidth(190)
         browser_layout = QVBoxLayout(browser_panel)
         browser_layout.setContentsMargins(0, 0, 0, 0)
         browser_layout.setSpacing(8)
@@ -278,18 +283,32 @@ class OpeningStudyTab(QWidget):
         browser_layout.addWidget(title)
         self.browser = OpeningBrowser(self.book)
         browser_layout.addWidget(self.browser, 1)
-        root.addWidget(browser_panel)
+        splitter.addWidget(browser_panel)
 
         # Center: board
         self.board_widget = BoardWidget()
         self.board_widget.set_movable_colors([chess.WHITE, chess.BLACK])
-        root.addWidget(self.board_widget, 1)
+        splitter.addWidget(self.board_widget)
 
-        # Right: explorer panel
+        # Right: explorer panel (scrollable so the window can shrink vertically)
         panel = QFrame()
         panel.setObjectName("SidePanel")
-        panel.setFixedWidth(360)
-        side = QVBoxLayout(panel)
+        # Wide enough for the panel content's own minimum (~316px) plus the
+        # scrollbar, so nothing gets clipped horizontally.
+        panel.setMinimumWidth(330)
+        panel.setMaximumWidth(440)
+        panel_outer = QVBoxLayout(panel)
+        panel_outer.setContentsMargins(0, 0, 0, 0)
+        panel_content = QWidget()
+        panel_content.setStyleSheet("background: transparent;")
+        panel_scroll = QScrollArea()
+        panel_scroll.setWidgetResizable(True)
+        panel_scroll.setFrameShape(QScrollArea.NoFrame)
+        panel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        panel_scroll.setWidget(panel_content)
+        panel_scroll.viewport().setStyleSheet("background: transparent;")
+        panel_outer.addWidget(panel_scroll)
+        side = QVBoxLayout(panel_content)
         side.setContentsMargins(16, 14, 16, 14)
         side.setSpacing(9)
 
@@ -303,8 +322,9 @@ class OpeningStudyTab(QWidget):
         self.line_label.setWordWrap(True)
         side.addWidget(self.line_label)
 
-        stats_title = QLabel("MASTERS RESULTS  ·  WHITE / DRAW / BLACK")
+        stats_title = QLabel("MASTERS RESULTS  ·  W / D / B")
         stats_title.setObjectName("SectionTitle")
+        stats_title.setToolTip("White wins / draws / Black wins")
         side.addWidget(stats_title)
         self.tri_bar = TriBar()
         side.addWidget(self.tri_bar)
@@ -379,7 +399,11 @@ class OpeningStudyTab(QWidget):
         bottom_row.addWidget(self.continue_button)
         side.addLayout(bottom_row)
 
-        root.addWidget(panel)
+        splitter.addWidget(panel)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setSizes([280, 520, 360])
 
         self.board_widget.moveRequested.connect(self._on_board_move)
         self.board_widget.backRequested.connect(self.step_back)

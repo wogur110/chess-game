@@ -345,6 +345,18 @@ QLineEdit:focus {{
     border-color: {ACCENT_DARK};
 }}
 
+/* ---- Splitter ---- */
+QSplitter::handle {{
+    background: transparent;
+}}
+QSplitter::handle:horizontal {{
+    width: 10px;
+}}
+QSplitter::handle:hover {{
+    background: {BG_PANEL_LIGHT};
+    border-radius: 4px;
+}}
+
 /* ---- Scroll area ---- */
 QScrollArea {{
     background: transparent;

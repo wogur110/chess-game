@@ -11,7 +11,8 @@ import chess
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QMainWindow,
-                               QMessageBox, QTabWidget, QVBoxLayout, QWidget)
+                               QMessageBox, QScrollArea, QTabWidget,
+                               QVBoxLayout, QWidget)
 
 from . import APP_NAME
 from .board_widget import BoardWidget, sprites
@@ -69,7 +70,17 @@ class MainWindow(QMainWindow):
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(0, 0, 0, 0)
         self.sidebar = Sidebar()
-        panel_layout.addWidget(self.sidebar)
+        # Scrollable so the window can shrink vertically below the sidebar's
+        # natural height.
+        sidebar_scroll = QScrollArea()
+        sidebar_scroll.setWidgetResizable(True)
+        sidebar_scroll.setFrameShape(QScrollArea.NoFrame)
+        sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        sidebar_scroll.setWidget(self.sidebar)
+        sidebar_scroll.viewport().setStyleSheet("background: transparent;")
+        sidebar_scroll.setMinimumWidth(300)
+        sidebar_scroll.setMaximumWidth(430)
+        panel_layout.addWidget(sidebar_scroll)
         root.addWidget(panel)
 
         self.opening_tab = OpeningStudyTab()
@@ -82,6 +93,7 @@ class MainWindow(QMainWindow):
         self._connect_sidebar()
         self._install_shortcuts()
 
+        self.setMinimumSize(820, 600)
         self.resize(1180, 780)
         self._sync_initial_state()
 
