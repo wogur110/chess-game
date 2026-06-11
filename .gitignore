@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+build/
+dist/
+saves/
+.venv/
+venv/
+
+# Stockfish binaries (~110 MB each, over GitHub's file size limit).
+# Fetch them with: python download_stockfish.py
+engines/linux/stockfish
+engines/windows/stockfish.exe
+
+# Test artifacts
+tests/*.png

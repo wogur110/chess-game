@@ -1,0 +1,82 @@
+# Chess Studio
+
+오프라인 전용 체스 GUI입니다. Stockfish 18을 내장하여 AI 대국, 추천수 확률 표시,
+실시간 승률 분석, 난이도 조절, 복기(리플레이) 기능을 제공합니다.
+
+![다크 모던 테마, PySide6 기반]
+
+## 주요 기능
+
+- **다크 모던 GUI** — PySide6(Qt) 기반, 드래그 & 드롭 / 클릭으로 착수
+- **AI 추천수 확률 표시** — 매 수마다 상위 3개 후보 수를 화살표 + 확률(%)로 표시
+  - 추천 확률(rec %): 후보 수 간 상대적 추천 강도
+  - 승리 확률(win %): 그 수를 두었을 때 두는 쪽의 기대 승률
+- **승률 사이드바** — 매 착수 후 백/흑 승률을 게이지와 수치로 표시 (보드 옆 세로 평가 바 포함)
+- **AI 난이도 조절** — 슬라이더 10단계 (초보 ~800 Elo부터 풀 파워 3200+까지)
+- **모드 전환 (대국 중에도 가능)** — 백/흑 각각 Human / AI 선택
+  - Human vs AI, AI vs AI, Human vs Human 모두 가능
+  - 사람이 한 명일 때는 항상 사람 진영이 화면 아래쪽에 오도록 보드가 자동으로 뒤집힘
+  - AI vs AI는 일시정지 / 재개 가능
+- **뒤로 가기(Undo)** — AI 상대 시 사람 차례까지 자동으로 되돌림
+- **복기 / 저장** — PGN 형식으로 저장(평가값 포함), 불러온 뒤 ◀ ▶ 로 한 수씩 재생.
+  과거 장면에서 새 수를 두면 그 지점부터 이어서 둘 수 있음
+- 사운드 없음, 네트워크 연결 불필요 (완전 오프라인)
+
+## 실행 방법 (개발 환경)
+
+```bash
+pip install -r requirements.txt
+python download_stockfish.py   # 최초 1회: Stockfish 18 바이너리 다운로드
+python main.py
+```
+
+Stockfish 바이너리(~110 MB)는 GitHub 파일 크기 한도 때문에 저장소에 포함되어
+있지 않습니다. `download_stockfish.py`가 `engines/linux/stockfish` (Linux) /
+`engines/windows/stockfish.exe` (Windows)에 받아줍니다.
+없으면 시스템 PATH의 `stockfish`를 대신 사용합니다. 다운로드 후에는 완전
+오프라인으로 동작합니다.
+
+## Windows 실행파일 빌드
+
+Windows PC에서 프로젝트 폴더를 통째로 복사한 뒤:
+
+```bat
+build_windows.bat
+```
+
+빌드가 끝나면 `dist\ChessStudio\ChessStudio.exe`가 생성됩니다.
+배포할 때는 `dist\ChessStudio` 폴더 전체를 복사하면 됩니다 (Stockfish 포함, 오프라인 동작).
+
+> PyInstaller는 크로스 컴파일을 지원하지 않으므로 Windows 실행파일은 Windows에서
+> 빌드해야 합니다. Linux용은 `./build_linux.sh`를 사용하세요.
+
+## 조작법
+
+| 동작 | 방법 |
+|---|---|
+| 착수 | 기물 드래그 또는 클릭 → 목적지 클릭 |
+| 한 수 앞/뒤로 (복기) | `←` / `→` 또는 사이드바 ◀ ▶ |
+| 처음/끝으로 | `Home` / `End` |
+| 되돌리기 (Undo) | `Ctrl+Z` 또는 Undo 버튼 |
+| 새 게임 / 저장 / 불러오기 | `Ctrl+N` / `Ctrl+S` / `Ctrl+O` |
+| 추천 화살표 켜기/끄기 | 사이드바 "Arrows" 체크박스 |
+| 추천수 바로 두기 | 사이드바 추천수 행 클릭 |
+
+## 구조
+
+```
+main.py                  실행 진입점
+app/
+  theme.py               다크 테마 팔레트 + Qt 스타일시트
+  eval_utils.py          엔진 점수 → 승률 변환 (Stockfish WDL 모델)
+  engine_manager.py      Stockfish 프로세스 2개 관리 (착수용 / 분석용)
+  game_controller.py     게임 상태, 모드, 되돌리기, 저장/복기
+  board_widget.py        보드 렌더링, 드래그&드롭, 추천 화살표
+  sidebar.py             승률 바, 추천수 패널, 기보 목록, 컨트롤
+  main_window.py         전체 조립
+engines/                 Stockfish 18 바이너리 (Linux / Windows)
+saves/                   저장된 게임 (PGN)
+```
+
+분석 엔진은 난이도와 무관하게 항상 풀 파워로 동작하므로, 낮은 난이도로 두더라도
+승률 표시와 추천수는 정확합니다.
