@@ -13,3 +13,7 @@ engines/windows/stockfish.exe
 
 # Test artifacts
 tests/*.png
+
+# Opening-data build cache (TWIC archives, intermediate counts) — only the
+# final app/data/openings.json.gz is committed.
+tools/cache/

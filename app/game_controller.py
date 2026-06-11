@@ -218,6 +218,32 @@ class GameController(QObject):
         self.movesChanged.emit()
         self._after_position_change(None, animate=False)
 
+    def start_from(self, moves: list, human_color: chess.Color):
+        """Start a game from the standard position with `moves` pre-played
+        (e.g. an opening line); the human takes `human_color`, the AI the other."""
+        self._generation += 1
+        self._set_thinking(False)
+        self._base = chess.Board()
+        replay = chess.Board()
+        san: list[str] = []
+        applied: list[chess.Move] = []
+        for move in moves:
+            if move not in replay.legal_moves:
+                break
+            san.append(replay.san(move))
+            replay.push(move)
+            applied.append(move)
+        self._moves = applied
+        self._san = san
+        self._scores = [None] * (len(applied) + 1)
+        self._view = len(applied)
+        self.players[human_color] = PlayerKind.HUMAN
+        self.players[not human_color] = PlayerKind.AI
+        self.playersChanged.emit()
+        self.movesChanged.emit()
+        last = applied[-1] if applied else None
+        self._after_position_change(last, animate=False)
+
     def set_player(self, color: chess.Color, kind: PlayerKind):
         if self.players[color] == kind:
             return

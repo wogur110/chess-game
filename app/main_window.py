@@ -11,12 +11,13 @@ import chess
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QMainWindow,
-                               QMessageBox, QVBoxLayout, QWidget)
+                               QMessageBox, QTabWidget, QVBoxLayout, QWidget)
 
 from . import APP_NAME
 from .board_widget import BoardWidget, sprites
 from .engine_manager import EngineManager
 from .game_controller import GameController, PlayerKind
+from .opening_tab import OpeningStudyTab
 from .sidebar import EvalBar, Sidebar
 
 
@@ -48,9 +49,12 @@ class MainWindow(QMainWindow):
         self.controller = GameController(engine, self)
         self._auto_orient = True
 
-        central = QWidget(self)
-        self.setCentralWidget(central)
-        root = QHBoxLayout(central)
+        self.tabs = QTabWidget(self)
+        self.tabs.setDocumentMode(True)
+        self.setCentralWidget(self.tabs)
+
+        play_page = QWidget()
+        root = QHBoxLayout(play_page)
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(14)
 
@@ -67,6 +71,11 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         panel_layout.addWidget(self.sidebar)
         root.addWidget(panel)
+
+        self.opening_tab = OpeningStudyTab()
+        self.tabs.addTab(play_page, "♟  Play")
+        self.tabs.addTab(self.opening_tab, "📖  Opening Study")
+        self.opening_tab.continueRequested.connect(self._on_continue_from_opening)
 
         self._build_menu()
         self._connect_controller()
@@ -123,16 +132,27 @@ class MainWindow(QMainWindow):
 
     def _install_shortcuts(self):
         bindings = (
-            (Qt.Key_Left, lambda: self.controller.step(-1)),
-            (Qt.Key_Right, lambda: self.controller.step(1)),
-            (Qt.Key_Home, lambda: self.controller.navigate(0)),
-            (Qt.Key_End, lambda: self.controller.navigate(self.controller.total_moves)),
+            (Qt.Key_Left, lambda: self.controller.step(-1), self.opening_tab.step_back),
+            (Qt.Key_Right, lambda: self.controller.step(1), self.opening_tab.step_forward),
+            (Qt.Key_Home, lambda: self.controller.navigate(0), None),
+            (Qt.Key_End,
+             lambda: self.controller.navigate(self.controller.total_moves), None),
         )
-        for key, slot in bindings:
+        for key, play_slot, opening_slot in bindings:
             shortcut = QShortcut(QKeySequence(key), self)
-            shortcut.activated.connect(slot)
+            shortcut.activated.connect(
+                lambda p=play_slot, o=opening_slot: self._route_shortcut(p, o))
         undo_shortcut = QShortcut(QKeySequence.Undo, self)
-        undo_shortcut.activated.connect(self.controller.undo)
+        undo_shortcut.activated.connect(
+            lambda: self._route_shortcut(self.controller.undo,
+                                         self.opening_tab.step_back))
+
+    def _route_shortcut(self, play_slot, opening_slot):
+        if self.tabs.currentWidget() is self.opening_tab:
+            if opening_slot is not None:
+                opening_slot()
+        else:
+            play_slot()
 
     def _sync_initial_state(self):
         c = self.controller
@@ -213,6 +233,14 @@ class MainWindow(QMainWindow):
         c = self.controller
         if c.view_board().turn in c.movable_colors():
             c.make_move(move)
+
+    def _on_continue_from_opening(self, moves: list, human_color: bool):
+        self.controller.start_from(moves, bool(human_color))
+        self._auto_orient = True
+        self._apply_orientation()
+        self.tabs.setCurrentIndex(0)
+        self.statusBar().showMessage(
+            "Continuing from the opening — good luck!", 5000)
 
     def _apply_orientation(self):
         if not self._auto_orient:

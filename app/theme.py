@@ -284,6 +284,73 @@ QMenu::separator {{
     margin: 5px 8px;
 }}
 
+/* ---- Tabs ---- */
+QTabWidget::pane {{
+    border: none;
+    background: {BG_MAIN};
+}}
+QTabBar {{
+    background: {BG_MAIN};
+}}
+QTabBar::tab {{
+    background: transparent;
+    color: {TEXT_MUTED};
+    padding: 9px 18px;
+    margin: 4px 2px 0 6px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-weight: 600;
+}}
+QTabBar::tab:selected {{
+    color: {TEXT};
+    border-bottom: 2px solid {ACCENT};
+}}
+QTabBar::tab:hover:!selected {{
+    color: {TEXT};
+}}
+
+/* ---- Tree (opening browser) ---- */
+QTreeWidget {{
+    background-color: {BG_PANEL};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    outline: none;
+    padding: 4px;
+}}
+QTreeWidget::item {{
+    padding: 4px 2px;
+    border-radius: 4px;
+    color: {TEXT};
+}}
+QTreeWidget::item:hover {{
+    background-color: {BG_PANEL_HOVER};
+}}
+QTreeWidget::item:selected {{
+    background-color: {ACCENT_DARK};
+    color: #ffffff;
+}}
+QTreeView::branch {{
+    background: transparent;
+}}
+
+/* ---- Line edit (search) ---- */
+QLineEdit {{
+    background-color: {BG_PANEL_LIGHT};
+    border: 1px solid {BORDER};
+    border-radius: 7px;
+    padding: 7px 10px;
+    color: {TEXT};
+}}
+QLineEdit:focus {{
+    border-color: {ACCENT_DARK};
+}}
+
+/* ---- Scroll area ---- */
+QScrollArea {{
+    background: transparent;
+    border: none;
+}}
+
 /* ---- Tooltip ---- */
 QToolTip {{
     background-color: {BG_PANEL_LIGHT};

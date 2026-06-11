@@ -18,7 +18,7 @@ a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=engine_binaries,
-    datas=[],
+    datas=[("app/data/openings.json.gz", "app/data")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
