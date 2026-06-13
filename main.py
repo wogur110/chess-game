@@ -14,6 +14,11 @@ from app.theme import build_stylesheet
 
 
 def main() -> int:
+    if "--smoke" in sys.argv:
+        # Headless self-check used by CI to verify the packaged build works.
+        from app.smoke import run_smoke
+        return run_smoke()
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setStyle("Fusion")

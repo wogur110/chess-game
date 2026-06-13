@@ -54,7 +54,31 @@ GitHub's file-size limit. `download_stockfish.py` places them at
 If they are missing, a `stockfish` found on the system PATH is used instead.
 After the download, everything runs fully offline.
 
-## Building the Windows executable
+## Getting a Windows build
+
+### Option A — automated build via GitHub Actions (recommended)
+
+The repository ships a workflow at
+[`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)
+that builds the Windows executable on a `windows-latest` runner. It runs on
+every push/PR to `main`, can be started manually from the **Actions** tab
+("Build Windows executable" → *Run workflow*), and is fully self-contained —
+it downloads Stockfish, smoke-tests the code on Windows, builds with
+PyInstaller, then smoke-tests the resulting `.exe`.
+
+- **Any run** uploads `ChessStudio-windows-x64-<version>.zip` as a build
+  *artifact* (download it from the run's summary page).
+- **Pushing a version tag** publishes a GitHub *Release* with the zip attached:
+
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+
+To run the result: download the zip, extract it, and run
+`ChessStudio\ChessStudio.exe`. The whole folder is the app — no installer.
+
+### Option B — build locally on Windows
 
 Copy the project folder to a Windows PC, then run:
 
