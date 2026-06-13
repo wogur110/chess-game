@@ -4,6 +4,10 @@ An offline-only chess GUI with Stockfish 18 built in: play against the AI,
 see suggested moves with probabilities, watch live win-rate analysis, tune
 the difficulty, and review saved games.
 
+**▶ [Download the latest Windows build](https://github.com/wogur110/chess-game/releases/latest)**
+— extract the zip and run `ChessStudio\ChessStudio.exe`. No installation, fully offline.
+(See [all releases](https://github.com/wogur110/chess-game/releases).)
+
 ![Dark modern theme, built with PySide6]
 
 ## Features
@@ -68,7 +72,8 @@ PyInstaller, then smoke-tests the resulting `.exe`.
 
 - **Any run** uploads `ChessStudio-windows-x64-<version>.zip` as a build
   *artifact* (download it from the run's summary page).
-- **Pushing a version tag** publishes a GitHub *Release* with the zip attached:
+- **Pushing a version tag** publishes a GitHub *Release* with the zip attached
+  on the [Releases page](https://github.com/wogur110/chess-game/releases):
 
   ```bash
   git tag v1.0.0
