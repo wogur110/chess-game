@@ -8,7 +8,21 @@ the difficulty, and review saved games.
 — extract the zip and run `ChessStudio\ChessStudio.exe`. No installation, fully offline.
 (See [all releases](https://github.com/wogur110/chess-game/releases).)
 
-![Dark modern theme, built with PySide6]
+## Screenshots
+
+**Play against Stockfish** — a live win-probability bar, the top-3 candidate
+moves drawn as arrows with their probabilities, an adjustable difficulty
+slider, and the move list. White / Black can each be set to Human or AI at any
+time, and the board flips so your side is always at the bottom.
+
+![Play tab — board with suggestion arrows, win probability and engine analysis](docs/images/play.png)
+
+**Opening study** — browse the full ECO tree on the left, replay any line on
+the board, and read master-game win rates (White / Draw / Black) plus per-move
+statistics for every position. Pick a side and drill the line, then hand the
+position to the Play tab to finish the game against the engine.
+
+![Opening Study tab — opening browser, board, and master win-rate statistics](docs/images/opening.png)
 
 ## Features
 
