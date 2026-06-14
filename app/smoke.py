@@ -32,6 +32,7 @@ def run_smoke(timeout_ms: int = 30000) -> int:
         from PySide6.QtWidgets import QApplication
 
         from app.engine_manager import EngineManager
+        from app.game_controller import PlayerKind
         from app.main_window import MainWindow
 
         app = QApplication(sys.argv)
@@ -41,6 +42,10 @@ def run_smoke(timeout_ms: int = 30000) -> int:
                 "bundled Stockfish not found — find_stockfish() returned None")
 
         window = MainWindow(engine)
+        # Force the player config so the round-trip works regardless of any
+        # persisted settings (white human plays, black AI must reply).
+        window.controller.set_player(chess.WHITE, PlayerKind.HUMAN)
+        window.controller.set_player(chess.BLACK, PlayerKind.AI)
         engine.start()
         window.controller.refresh_analysis()
 

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import chess
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QByteArray, QSettings, Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QMainWindow,
                                QMessageBox, QScrollArea, QTabWidget,
@@ -125,12 +125,16 @@ class MainWindow(QMainWindow):
         c.statusChanged.connect(self.sidebar.set_status)
         c.evalChanged.connect(self._on_eval_changed)
         c.suggestionsChanged.connect(self._on_suggestions_changed)
+        c.openingChanged.connect(self.sidebar.set_opening)
+        c.reviewChanged.connect(self._refresh_review)
+        c.reviewProgress.connect(self.sidebar.set_review_progress)
         c.engineMissing.connect(self._on_engine_error)
 
     def _connect_sidebar(self):
         s = self.sidebar
         s.playerChanged.connect(self._on_player_combo)
-        s.difficultyChanged.connect(self.controller.set_difficulty)
+        s.difficultyChanged.connect(
+            lambda color, level: self.controller.set_difficulty(level, bool(color)))
         s.newGameClicked.connect(self._new_game)
         s.undoClicked.connect(self.controller.undo)
         s.saveClicked.connect(self._save_game)
@@ -140,6 +144,8 @@ class MainWindow(QMainWindow):
         s.hintsToggled.connect(self.board.set_show_hints)
         s.flipClicked.connect(self._on_flip)
         s.suggestionClicked.connect(self._on_suggestion_clicked)
+        s.analyzeClicked.connect(self.controller.analyze_game)
+        s.evalGraphClicked.connect(self.controller.navigate)
         self.board.moveRequested.connect(self._on_board_move)
         self.board.backRequested.connect(lambda: self.controller.step(-1))
 
@@ -169,8 +175,8 @@ class MainWindow(QMainWindow):
 
     def _sync_initial_state(self):
         c = self.controller
-        self.sidebar.difficulty_slider.setValue(c.difficulty)
-        self.sidebar.update_difficulty_label(c.difficulty)
+        self.sidebar.sync_difficulty(c.difficulty_for(chess.WHITE),
+                                     c.difficulty_for(chess.BLACK))
         self.sidebar.sync_players(c.players[chess.WHITE], c.players[chess.BLACK])
         self._apply_orientation()
         board = c.view_board()
@@ -178,12 +184,20 @@ class MainWindow(QMainWindow):
         self.board.set_movable_colors(c.movable_colors())
         self.sidebar.set_turn(board.turn)
         self.sidebar.set_status(c.status_text())
+        self.sidebar.set_opening(c.opening_name())
         self.sidebar.set_nav_state(c.view_index, c.total_moves)
         self.sidebar.moves_table.rebuild(c.san_history, c.base_fullmove, c.base_turn)
+        self._refresh_review()
         self.statusBar().setSizeGripEnabled(False)
+        self._load_settings()
         # No-op if the engine has not been started yet; main() refreshes again
         # right after engine.start().
         c.refresh_analysis()
+
+    def _refresh_review(self):
+        c = self.controller
+        self.sidebar.set_review(c.eval_series(), c.view_index,
+                                c.move_annotations(), c.accuracy_summary())
 
     # ---- Controller events ----
 
@@ -195,10 +209,13 @@ class MainWindow(QMainWindow):
     def _on_moves_changed(self):
         c = self.controller
         self.sidebar.moves_table.rebuild(c.san_history, c.base_fullmove, c.base_turn)
+        self.sidebar.analyze_button.setEnabled(c.total_moves > 0)
+        self._refresh_review()
 
     def _on_view_changed(self, view_index: int, total: int):
         self.sidebar.moves_table.set_current(view_index)
         self.sidebar.set_nav_state(view_index, total)
+        self._refresh_review()
 
     def _on_players_changed(self):
         c = self.controller
@@ -305,8 +322,71 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Loaded {Path(path).name} — {count} moves. Use ◀ ▶ to replay.", 8000)
 
+    # ---- Settings persistence ----
+
+    @staticmethod
+    def _as_bool(value, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        return str(value).lower() in ("1", "true", "yes")
+
+    def _load_settings(self):
+        s = QSettings()
+        c = self.controller
+        for color, key in ((chess.WHITE, "players/white"),
+                           (chess.BLACK, "players/black")):
+            val = s.value(key)
+            if val in ("Human", "AI"):
+                c.set_player(color, PlayerKind.HUMAN if val == "Human" else PlayerKind.AI)
+        for color, key in ((chess.WHITE, "difficulty/white"),
+                           (chess.BLACK, "difficulty/black")):
+            val = s.value(key)
+            if val is not None:
+                try:
+                    c.set_difficulty(int(val), color)
+                except (ValueError, TypeError):
+                    pass
+        self.sidebar.sync_difficulty(c.difficulty_for(chess.WHITE),
+                                     c.difficulty_for(chess.BLACK))
+        self.sidebar.sync_players(c.players[chess.WHITE], c.players[chess.BLACK])
+
+        hints = self._as_bool(s.value("hints"), True)
+        self.sidebar.hints_checkbox.setChecked(hints)   # drives the board too
+
+        tab = s.value("tab")
+        if tab is not None:
+            try:
+                self.tabs.setCurrentIndex(int(tab))
+            except (ValueError, TypeError):
+                pass
+
+        geometry = s.value("geometry")
+        if isinstance(geometry, (QByteArray, bytes, bytearray)):
+            try:
+                self.restoreGeometry(geometry)
+            except (TypeError, ValueError):
+                pass
+
+        self._auto_orient = True
+        self._apply_orientation()
+        self.board.set_movable_colors(c.movable_colors())
+
+    def _save_settings(self):
+        s = QSettings()
+        c = self.controller
+        s.setValue("geometry", self.saveGeometry())
+        s.setValue("players/white", c.players[chess.WHITE].value)
+        s.setValue("players/black", c.players[chess.BLACK].value)
+        s.setValue("difficulty/white", c.difficulty_for(chess.WHITE))
+        s.setValue("difficulty/black", c.difficulty_for(chess.BLACK))
+        s.setValue("hints", self.sidebar.hints_checkbox.isChecked())
+        s.setValue("tab", self.tabs.currentIndex())
+
     # ---- Shutdown ----
 
     def closeEvent(self, event):
+        self._save_settings()
         self.engine.shutdown()
         event.accept()

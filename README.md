@@ -24,6 +24,13 @@ position to the Play tab to finish the game against the engine.
 
 ![Opening Study tab — opening browser, board, and master win-rate statistics](docs/images/opening.png)
 
+**Game review** — the opening is named as you play (here a C54 Italian Game),
+an eval graph traces the win probability across the whole game (click it to jump
+to a move), and **Analyze game** scores every move: per-side accuracy and
+`?!` / `?` / `??` annotations in the move list.
+
+![Game review — opening name, eval graph, accuracy and move annotations](docs/images/review.png)
+
 ## Features
 
 - **Dark modern GUI** — PySide6 (Qt) based; move pieces by drag & drop or click-click
@@ -33,8 +40,15 @@ position to the Play tab to finish the game against the engine.
   - Winning probability (win %): the mover's expected score after that move
 - **Win-probability sidebar** — white/black winning chances as a gauge and numbers
   after every move, plus a vertical evaluation bar next to the board
+- **Game review** — after a game (or any time via **Analyze game**):
+  - an **eval graph** of the win probability across the whole game; click it to
+    jump straight to that move
+  - **per-side accuracy** and a count of inaccuracies / mistakes / blunders
+  - **move annotations** (`?!` / `?` / `??`) coloured in the move list
+  - the **opening name** (ECO code) is shown live as you play
 - **Adjustable AI difficulty** — 10 slider levels, from beginner (~800 Elo) to
-  full strength (3200+)
+  full strength (3200+); White and Black AI can be set to different levels for
+  engine-vs-engine matchups
 - **Mode switching, even mid-game** — pick Human / AI per color
   - Human vs AI, AI vs AI, and Human vs Human all work
   - With exactly one human, the board auto-flips so the human side is always
@@ -43,6 +57,8 @@ position to the Play tab to finish the game against the engine.
 - **Undo** — against an AI opponent it rewinds to your previous turn automatically
 - **Review / save** — games are saved as PGN (with evaluations); load one and step
   through it with ◀ ▶. Playing a new move from a past position branches from there
+- **Remembers your setup** — players, difficulty, hint arrows, the open tab and the
+  window size are restored on the next launch
 - **Opening study tab** — the full ECO tree built in (3,726 named lines,
   148 families)
   - Search and pick an opening, then **demo** it move by move with ▶
@@ -123,6 +139,8 @@ the whole `dist\ChessStudio` folder (Stockfish included, works offline).
 | New game / Save / Load | `Ctrl+N` / `Ctrl+S` / `Ctrl+O` |
 | Toggle suggestion arrows | "Arrows" checkbox in the sidebar |
 | Play a suggested move | Click its row in the sidebar |
+| Review the whole game | "Analyze game" in the sidebar (accuracy + annotations) |
+| Jump to a move from the graph | Click the eval graph in the sidebar |
 | Study openings | Opening Study tab → pick an opening on the left |
 | Step through an opening demo | ▶ button or `→` (clicking a book-move row also works) |
 | Drill an opening | Choose your side, then "Start drill" |

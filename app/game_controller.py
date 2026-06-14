@@ -25,8 +25,10 @@ import chess.pgn
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .engine_manager import DEFAULT_DIFFICULTY, DIFFICULTY_LEVELS, EngineManager
-from .eval_utils import (expectation_for, format_score_white,
-                         recommendation_probs, score_to_expectation_white)
+from .eval_utils import (classify_loss, expectation_for, format_score_white,
+                         move_accuracy, recommendation_probs,
+                         score_to_expectation_white)
+from .opening_book import load_book
 
 
 class PlayerKind(Enum):
@@ -44,6 +46,15 @@ class Suggestion:
     pv_san: list[str] = field(default_factory=list)
 
 
+@dataclass
+class ColorReview:
+    accuracy: Optional[float]   # 0..100, None if no scored moves
+    scored: int
+    blunder: int = 0
+    mistake: int = 0
+    inaccuracy: int = 0
+
+
 class GameController(QObject):
     positionChanged = Signal(object, object, bool)   # board, last_move|None, animate
     movesChanged = Signal()                          # history structure changed
@@ -53,6 +64,9 @@ class GameController(QObject):
     evalChanged = Signal(object, str)                # expectation_white|None, eval text
     suggestionsChanged = Signal(list)                # list[Suggestion]
     aiThinkingChanged = Signal(bool)
+    openingChanged = Signal(str)                     # opening name for the view
+    reviewChanged = Signal()                         # eval series / annotations changed
+    reviewProgress = Signal(int, int)                # done, total (0,0 = idle)
     engineMissing = Signal(str)
 
     AI_DELAY_MS = 150
@@ -63,7 +77,10 @@ class GameController(QObject):
         self.engine = engine
         self.engine.moveReady.connect(self._on_engine_move)
         self.engine.analysisReady.connect(self._on_analysis)
+        self.engine.fullAnalysisLine.connect(self._on_full_line)
+        self.engine.fullAnalysisDone.connect(self._on_full_done)
         self.engine.engineError.connect(self.engineMissing)
+        self._book = load_book()
 
         self._base = chess.Board()
         self._moves: list[chess.Move] = []
@@ -71,12 +88,18 @@ class GameController(QObject):
         self._scores: list[Optional[chess.engine.PovScore]] = [None]  # per position index
         self._view = 0
         self._generation = 0
+        self._game_id = 0     # changes when the move list changes (not on navigation)
+        self._review_done = 0
+        self._review_total = 0
 
         self.players: dict[chess.Color, PlayerKind] = {
             chess.WHITE: PlayerKind.HUMAN,
             chess.BLACK: PlayerKind.AI,
         }
-        self.difficulty = DEFAULT_DIFFICULTY
+        self.difficulty: dict[chess.Color, int] = {
+            chess.WHITE: DEFAULT_DIFFICULTY,
+            chess.BLACK: DEFAULT_DIFFICULTY,
+        }
         self.autoplay = True          # gates AI-vs-AI continuous play
         self._ai_thinking = False
 
@@ -152,6 +175,13 @@ class GameController(QObject):
         """A move made by the user on the board."""
         return self._apply_move(move, animate=False)
 
+    def _bump_game(self):
+        """Mark the move list as changed (cancels any whole-game review)."""
+        self._game_id += 1
+        self.engine.cancel_full_analysis()
+        self._review_done = self._review_total = 0
+        self.reviewProgress.emit(0, 0)
+
     def _apply_move(self, move: chess.Move, animate: bool) -> bool:
         board = self.view_board()
         if move not in board.legal_moves:
@@ -166,6 +196,7 @@ class GameController(QObject):
         self._scores.append(None)
         self._view = len(self._moves)
         self._generation += 1
+        self._bump_game()
         self._set_thinking(False)
         self.movesChanged.emit()
         self._after_position_change(move, animate)
@@ -177,6 +208,7 @@ class GameController(QObject):
         if not self._moves:
             return
         self._generation += 1
+        self._bump_game()
         self._set_thinking(False)
         self._pop_once()
         humans = self.human_colors()
@@ -209,6 +241,7 @@ class GameController(QObject):
 
     def new_game(self):
         self._generation += 1
+        self._bump_game()
         self._set_thinking(False)
         self._base = chess.Board()
         self._moves = []
@@ -222,6 +255,7 @@ class GameController(QObject):
         """Start a game from the standard position with `moves` pre-played
         (e.g. an opening line); the human takes `human_color`, the AI the other."""
         self._generation += 1
+        self._bump_game()
         self._set_thinking(False)
         self._base = chess.Board()
         replay = chess.Board()
@@ -254,8 +288,16 @@ class GameController(QObject):
         self._refresh_engine_requests()
         self._emit_status()
 
-    def set_difficulty(self, level: int):
-        self.difficulty = max(1, min(10, level))
+    def set_difficulty(self, level: int, color: Optional[chess.Color] = None):
+        level = max(1, min(10, level))
+        if color is None:
+            self.difficulty[chess.WHITE] = level
+            self.difficulty[chess.BLACK] = level
+        else:
+            self.difficulty[color] = level
+
+    def difficulty_for(self, color: chess.Color) -> int:
+        return self.difficulty[color]
 
     def set_autoplay(self, enabled: bool):
         self.autoplay = enabled
@@ -263,8 +305,8 @@ class GameController(QObject):
             self._maybe_start_ai()
         self._emit_status()
 
-    def difficulty_label(self) -> str:
-        return DIFFICULTY_LEVELS[self.difficulty].label
+    def difficulty_label(self, color: chess.Color) -> str:
+        return DIFFICULTY_LEVELS[self.difficulty[color]].label
 
     # ---- Engine round-trips ------------------------------------------------------
 
@@ -273,11 +315,123 @@ class GameController(QObject):
         the engine becomes ready or when player settings change externally."""
         self._refresh_engine_requests()
 
+    # ---- Opening identification ------------------------------------------------
+
+    def opening_name(self) -> str:
+        """Name of the deepest known opening along the line up to the view."""
+        if self._book is None:
+            return ""
+        board = self._base.copy()
+        epds = [board.epd()]
+        for move in self._moves[:self._view]:
+            board.push(move)
+            epds.append(board.epd())
+        named = self._book.name_for_history(epds)
+        return f"{named[0]} · {named[1]}" if named else ""
+
+    # ---- Game review (move quality, accuracy, eval graph) ----------------------
+
+    def eval_series(self) -> list:
+        """White-POV win expectation (0..1) per position; None where unknown."""
+        base_ply = self._base.ply()
+        return [None if s is None
+                else score_to_expectation_white(s, ply=base_ply + i)
+                for i, s in enumerate(self._scores)]
+
+    def move_annotations(self) -> list:
+        """Per-ply quality class ('blunder'/'mistake'/'inaccuracy'/'good') or
+        None when the surrounding positions have not been evaluated."""
+        base_ply = self._base.ply()
+        board = self._base.copy()
+        out: list = []
+        for i, move in enumerate(self._moves):
+            before = self._scores[i]
+            after = self._scores[i + 1] if i + 1 < len(self._scores) else None
+            klass = None
+            if before is not None and after is not None:
+                mover = board.turn
+                before_m = expectation_for(
+                    mover, score_to_expectation_white(before, ply=base_ply + i))
+                after_m = expectation_for(
+                    mover, score_to_expectation_white(after, ply=base_ply + i + 1))
+                klass = classify_loss(max(0.0, before_m - after_m))
+            out.append(klass)
+            board.push(move)
+        return out
+
+    def accuracy_summary(self) -> dict:
+        base_ply = self._base.ply()
+        board = self._base.copy()
+        reviews = {chess.WHITE: ColorReview(None, 0), chess.BLACK: ColorReview(None, 0)}
+        accs = {chess.WHITE: [], chess.BLACK: []}
+        for i, move in enumerate(self._moves):
+            before = self._scores[i]
+            after = self._scores[i + 1] if i + 1 < len(self._scores) else None
+            mover = board.turn
+            if before is not None and after is not None:
+                before_pct = expectation_for(
+                    mover, score_to_expectation_white(before, ply=base_ply + i)) * 100
+                after_pct = expectation_for(
+                    mover, score_to_expectation_white(after, ply=base_ply + i + 1)) * 100
+                accs[mover].append(move_accuracy(before_pct, after_pct))
+                klass = classify_loss(max(0.0, (before_pct - after_pct) / 100.0))
+                review = reviews[mover]
+                if klass in ("blunder", "mistake", "inaccuracy"):
+                    setattr(review, klass, getattr(review, klass) + 1)
+            board.push(move)
+        for color in (chess.WHITE, chess.BLACK):
+            vals = accs[color]
+            reviews[color].scored = len(vals)
+            reviews[color].accuracy = (sum(vals) / len(vals)) if vals else None
+        return reviews
+
+    def scored_positions(self) -> int:
+        return sum(1 for s in self._scores if s is not None)
+
+    def analyze_game(self):
+        """Evaluate every position so move annotations and accuracy are complete."""
+        if not self.engine.available or not self._moves:
+            return
+        indexed: list = []
+        board = self._base.copy()
+        indexed.append((0, board.copy()))
+        for i, move in enumerate(self._moves):
+            board.push(move)
+            indexed.append((i + 1, board.copy()))
+        self._review_done = 0
+        # Terminal positions are skipped by the engine loop; don't count them
+        # or the progress bar would never reach 100%.
+        self._review_total = sum(1 for _, b in indexed if not b.is_game_over())
+        self.reviewProgress.emit(0, self._review_total)
+        self.engine.request_full_analysis(indexed, self._game_id)
+
+    def _on_full_line(self, game_id: int, index: int, score):
+        if game_id != self._game_id:
+            return
+        if 0 <= index < len(self._scores):
+            self._scores[index] = score
+        self._review_done += 1
+        self.reviewProgress.emit(self._review_done, self._review_total)
+        if index == self._view:
+            board = self.view_board()
+            self.evalChanged.emit(
+                score_to_expectation_white(score, ply=board.ply()),
+                format_score_white(score))
+        self.reviewChanged.emit()
+
+    def _on_full_done(self, game_id: int, completed: bool):
+        if game_id != self._game_id:
+            return
+        self._review_done = self._review_total
+        self.reviewProgress.emit(self._review_total, self._review_total)
+        self.reviewChanged.emit()
+
     def _after_position_change(self, last_move: Optional[chess.Move], animate: bool):
         board = self.view_board()
         self.positionChanged.emit(board, last_move, animate)
         self.viewChanged.emit(self._view, len(self._moves))
         self.suggestionsChanged.emit([])
+        self.openingChanged.emit(self.opening_name())
         self._refresh_engine_requests(board)
         self._emit_status()
 
@@ -325,7 +479,7 @@ class GameController(QObject):
         if self.outcome(board) is not None or self.players[board.turn] != PlayerKind.AI:
             self._set_thinking(False)
             return
-        self.engine.request_move(board, generation, self.difficulty)
+        self.engine.request_move(board, generation, self.difficulty[board.turn])
 
     def _on_engine_move(self, generation: int, move: chess.Move):
         if generation != self._generation or not self.is_live:
@@ -338,6 +492,7 @@ class GameController(QObject):
             return
         if 0 <= ctx < len(self._scores):
             self._scores[ctx] = result.lines[0].score
+            self.reviewChanged.emit()
         if ctx != self._view:
             return
         board = self.view_board()
@@ -410,7 +565,7 @@ class GameController(QObject):
     def _player_name(self, color: chess.Color) -> str:
         if self.players[color] == PlayerKind.HUMAN:
             return "Human"
-        return f"Stockfish (level {self.difficulty})"
+        return f"Stockfish (level {self.difficulty[color]})"
 
     def save_pgn(self, path: str):
         game = chess.pgn.Game()
@@ -453,6 +608,7 @@ class GameController(QObject):
             scores.append(node.eval())
 
         self._generation += 1
+        self._bump_game()
         self._set_thinking(False)
         self._base = base
         self._moves = moves

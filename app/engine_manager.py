@@ -54,6 +54,8 @@ DIFFICULTY_LEVELS: dict[int, DifficultyLevel] = {
 
 DEFAULT_DIFFICULTY = 5
 ANALYSIS_LIMIT = chess.engine.Limit(depth=22, time=0.9)
+# Shorter per-position budget for whole-game review (dozens of positions).
+FULL_ANALYSIS_LIMIT = chess.engine.Limit(depth=16, time=0.25)
 MULTIPV = 3
 
 
@@ -146,31 +148,55 @@ class _Worker:
         try:
             while True:
                 job = self.queue.get()
-                # Drain to the most recent job; older requests are obsolete.
+                # Latest-wins for ordinary jobs, but a "keep" job (whole-game
+                # review) must never be discarded by a newer interactive job.
+                pending_keep = None
+                if job is not _STOP and getattr(job, "keep", False):
+                    pending_keep, job = job, None
+                stop = job is _STOP
                 while True:
                     try:
                         nxt = self.queue.get_nowait()
                     except queue.Empty:
                         break
-                    job = nxt
-                if job is _STOP:
+                    if nxt is _STOP:
+                        stop = True
+                    elif getattr(nxt, "keep", False):
+                        pending_keep = nxt
+                    else:
+                        job = nxt
+                if stop:
                     break
-                try:
-                    job(engine, self)
-                except chess.engine.EngineTerminatedError:
-                    try:
-                        engine = self._spawn()
-                        job(engine, self)
-                    except Exception as exc:
-                        self.on_error(f"Stockfish ({self.name}) crashed: {exc}")
+                # Run the interactive job first (keeps the view fresh), then the
+                # long review job.
+                for task in (job, pending_keep):
+                    if task is None:
+                        continue
+                    engine = self._execute(task, engine)
+                    if engine is None:
                         return
-                except Exception as exc:
-                    self.on_error(f"Engine error ({self.name}): {exc}")
         finally:
+            if engine is not None:
+                try:
+                    engine.quit()
+                except Exception:
+                    pass
+
+    def _execute(self, job, engine):
+        """Run one job, restarting the engine once if it crashed. Returns the
+        engine to keep using, or None if it could not be restarted."""
+        try:
+            job(engine, self)
+        except chess.engine.EngineTerminatedError:
             try:
-                engine.quit()
-            except Exception:
-                pass
+                engine = self._spawn()
+                job(engine, self)
+            except Exception as exc:
+                self.on_error(f"Stockfish ({self.name}) crashed: {exc}")
+                return None
+        except Exception as exc:
+            self.on_error(f"Engine error ({self.name}): {exc}")
+        return engine
 
     def configure_cached(self, engine: chess.engine.SimpleEngine, options: dict):
         delta = {k: v for k, v in options.items() if self._configured.get(k) != v}
@@ -184,6 +210,8 @@ class EngineManager(QObject):
 
     analysisReady = Signal(int, int, object)   # generation, ctx, AnalysisResult
     moveReady = Signal(int, object)            # generation, chess.Move
+    fullAnalysisLine = Signal(int, int, object)  # game_id, position index, PovScore
+    fullAnalysisDone = Signal(int, bool)         # game_id, completed
     engineError = Signal(str)
 
     def __init__(self, parent: Optional[QObject] = None):
@@ -191,6 +219,7 @@ class EngineManager(QObject):
         self._path = find_stockfish()
         self._play: Optional[_Worker] = None
         self._analysis: Optional[_Worker] = None
+        self._full_gen = 0   # bumped to cancel an in-flight whole-game review
 
     @property
     def available(self) -> bool:
@@ -274,7 +303,41 @@ class EngineManager(QObject):
 
         self._analysis.submit(job)
 
+    def cancel_full_analysis(self):
+        """Stop an in-flight whole-game review (its loop checks this token)."""
+        self._full_gen += 1
+
+    def request_full_analysis(self, indexed_boards: list, game_id: int):
+        """Evaluate every position of a game. `indexed_boards` is a list of
+        (position_index, board); results stream back via fullAnalysisLine."""
+        if not self._analysis:
+            return
+        self._full_gen += 1
+        token = self._full_gen
+        snapshots = [(idx, b.copy(stack=False)) for idx, b in indexed_boards]
+
+        def job(engine: chess.engine.SimpleEngine, worker: _Worker):
+            completed = True
+            for idx, board in snapshots:
+                if self._full_gen != token:
+                    completed = False
+                    break
+                if board.is_game_over():
+                    continue
+                try:
+                    info = engine.analyse(board, FULL_ANALYSIS_LIMIT)
+                except Exception:
+                    continue
+                score = info.get("score") if isinstance(info, dict) else None
+                if score is not None:
+                    self.fullAnalysisLine.emit(game_id, idx, score)
+            self.fullAnalysisDone.emit(game_id, completed)
+
+        job.keep = True   # don't let the latest-wins drain discard this
+        self._analysis.submit(job)
+
     def shutdown(self):
+        self._full_gen += 1
         for worker in (self._play, self._analysis):
             if worker:
                 worker.stop()

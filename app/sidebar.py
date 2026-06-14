@@ -154,6 +154,100 @@ class WinBar(QWidget):
         painter.end()
 
 
+# ---- Eval graph (game review) -------------------------------------------------
+
+class EvalGraph(QWidget):
+    """White-POV win-expectation across the game; click to jump to a move."""
+
+    plyClicked = Signal(int)   # position index
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setFixedHeight(70)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Win probability over the game — click to jump to a move")
+        self._series: list = []      # white expectation 0..1 or None per position
+        self._view = 0
+
+    def set_series(self, series: list, view_index: int):
+        self._series = list(series)
+        self._view = view_index
+        self.update()
+
+    def _x_for(self, index: int, rect: QRectF) -> float:
+        n = max(1, len(self._series) - 1)
+        return rect.x() + rect.width() * (index / n)
+
+    def mousePressEvent(self, event):
+        if not self._series:
+            return
+        rect = QRectF(self.rect()).adjusted(2, 2, -2, -2)
+        n = max(1, len(self._series) - 1)
+        frac = (event.position().x() - rect.x()) / max(1.0, rect.width())
+        index = round(frac * n)
+        self.plyClicked.emit(max(0, min(len(self._series) - 1, index)))
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(2, 2, -2, -2)
+        path = QPainterPath()
+        path.addRoundedRect(rect, 6, 6)
+        painter.setClipPath(path)
+        painter.fillRect(rect, QColor(theme.EVALBAR_BLACK))
+
+        known = [i for i, v in enumerate(self._series) if v is not None]
+        if len(known) < 2:
+            painter.setClipping(False)
+            painter.setPen(QColor(theme.TEXT_DIM))
+            painter.drawText(rect, Qt.AlignCenter, "Play or analyze a game")
+            painter.end()
+            return
+
+        def y_for(exp: float) -> float:
+            return rect.y() + rect.height() * (1.0 - max(0.0, min(1.0, exp)))
+
+        # Only draw across the analyzed span [first known, last known]. Interior
+        # gaps carry the previous value; the unanalyzed tail stays blank so it is
+        # not mistaken for a confident flat evaluation.
+        first, last_idx = known[0], known[-1]
+        last = self._series[first]
+        pts = []
+        for i in range(first, last_idx + 1):
+            exp = self._series[i]
+            if exp is not None:
+                last = exp
+            pts.append((self._x_for(i, rect), y_for(last)))
+
+        area = QPainterPath()
+        area.moveTo(pts[0][0], rect.bottom())
+        for x, y in pts:
+            area.lineTo(x, y)
+        area.lineTo(pts[-1][0], rect.bottom())
+        area.closeSubpath()
+        painter.fillPath(area, QColor(theme.EVALBAR_WHITE))
+
+        # Midline
+        mid_y = rect.y() + rect.height() / 2
+        painter.setPen(QPen(QColor(theme.ACCENT), 1, Qt.DashLine))
+        painter.drawLine(int(rect.x()), int(mid_y), int(rect.right()), int(mid_y))
+
+        # Curve
+        line = QPainterPath()
+        line.moveTo(*pts[0])
+        for x, y in pts[1:]:
+            line.lineTo(x, y)
+        painter.setPen(QPen(QColor("#10151a"), 1.4))
+        painter.drawPath(line)
+
+        # View marker
+        painter.setClipping(False)
+        mx = self._x_for(self._view, rect)
+        painter.setPen(QPen(QColor(theme.ACCENT), 2))
+        painter.drawLine(int(mx), int(rect.y()), int(mx), int(rect.bottom()))
+        painter.end()
+
+
 # ---- AI suggestions panel -------------------------------------------------------
 
 class SuggestionsPanel(QWidget):
@@ -291,10 +385,12 @@ class MovesTable(QTableWidget):
         self.setVerticalScrollMode(QTableWidget.ScrollPerPixel)
         self.cellClicked.connect(self._on_cell_clicked)
         self._offset = 0
+        self._san_list: list = []
 
     def rebuild(self, san_history: list, base_fullmove: int, base_turn: chess.Color):
         self.blockSignals(True)
         self.clearContents()
+        self._san_list = list(san_history)
         self._offset = 1 if base_turn == chess.BLACK else 0
         total_slots = len(san_history) + self._offset
         rows = (total_slots + 1) // 2
@@ -333,6 +429,26 @@ class MovesTable(QTableWidget):
                 self.scrollToItem(item)
         self.blockSignals(False)
 
+    ANNOTATION_COLORS = {
+        "blunder": "#e06c75",
+        "mistake": "#e8943b",
+        "inaccuracy": "#e8c468",
+    }
+    ANNOTATION_SYMBOLS = {"blunder": "??", "mistake": "?", "inaccuracy": "?!"}
+
+    def set_annotations(self, annotations: list):
+        """Colour each move and append a ?!/?/?? symbol by quality class."""
+        for i, san in enumerate(self._san_list):
+            slot = i + self._offset
+            row, col = slot // 2, 1 + slot % 2
+            item = self.item(row, col)
+            if item is None:
+                continue
+            klass = annotations[i] if i < len(annotations) else None
+            symbol = self.ANNOTATION_SYMBOLS.get(klass, "")
+            item.setText(f"{san}{symbol}")
+            item.setForeground(QColor(self.ANNOTATION_COLORS.get(klass, theme.TEXT)))
+
     def _on_cell_clicked(self, row: int, col: int):
         item = self.item(row, col)
         if item is None:
@@ -354,7 +470,7 @@ def _section_label(text: str) -> QLabel:
 
 class Sidebar(QWidget):
     playerChanged = Signal(bool, object)        # color (chess.WHITE/BLACK), PlayerKind
-    difficultyChanged = Signal(int)
+    difficultyChanged = Signal(bool, int)       # color, level
     newGameClicked = Signal()
     undoClicked = Signal()
     saveClicked = Signal()
@@ -364,6 +480,8 @@ class Sidebar(QWidget):
     hintsToggled = Signal(bool)
     flipClicked = Signal()
     suggestionClicked = Signal(object)
+    analyzeClicked = Signal()
+    evalGraphClicked = Signal(int)              # position index
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -379,6 +497,12 @@ class Sidebar(QWidget):
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
 
+        self.opening_label = QLabel("")
+        self.opening_label.setObjectName("SubtleLabel")
+        self.opening_label.setWordWrap(True)
+        self.opening_label.setVisible(False)
+        layout.addWidget(self.opening_label)
+
         # Win probability
         layout.addWidget(_section_label("Win probability"))
         self.win_bar = WinBar()
@@ -389,6 +513,21 @@ class Sidebar(QWidget):
         eval_row.addWidget(self.eval_label)
         eval_row.addStretch(1)
         layout.addLayout(eval_row)
+
+        # Game review
+        layout.addWidget(_section_label("Game review"))
+        self.eval_graph = EvalGraph()
+        self.eval_graph.plyClicked.connect(self.evalGraphClicked)
+        layout.addWidget(self.eval_graph)
+        self.accuracy_label = QLabel("Accuracy: —")
+        self.accuracy_label.setObjectName("SubtleLabel")
+        self.accuracy_label.setWordWrap(True)
+        layout.addWidget(self.accuracy_label)
+        self.analyze_button = QPushButton("Analyze game")
+        self.analyze_button.setToolTip(
+            "Evaluate every move so accuracy and ?!/?/?? annotations are complete")
+        self.analyze_button.clicked.connect(self.analyzeClicked)
+        layout.addWidget(self.analyze_button)
 
         # Players
         layout.addWidget(_section_label("Players"))
@@ -417,16 +556,19 @@ class Sidebar(QWidget):
         self.black_combo.currentIndexChanged.connect(
             lambda idx: self.playerChanged.emit(chess.BLACK, self._kind_for(idx)))
 
-        # Difficulty
+        # Difficulty — one row per AI side (shown only for sides played by AI).
         layout.addWidget(_section_label("AI difficulty"))
-        self.difficulty_slider = QSlider(Qt.Horizontal)
-        self.difficulty_slider.setRange(1, 10)
-        self.difficulty_slider.setPageStep(1)
-        self.difficulty_label = QLabel("")
-        self.difficulty_label.setObjectName("SubtleLabel")
-        layout.addWidget(self.difficulty_slider)
-        layout.addWidget(self.difficulty_label)
-        self.difficulty_slider.valueChanged.connect(self._on_difficulty)
+        (self.white_diff_row, self.white_diff_slider,
+         self.white_diff_label) = self._make_diff_row(chess.WHITE, "⚪ White AI")
+        (self.black_diff_row, self.black_diff_slider,
+         self.black_diff_label) = self._make_diff_row(chess.BLACK, "⚫ Black AI")
+        layout.addWidget(self.white_diff_row)
+        layout.addWidget(self.black_diff_row)
+        self.no_ai_label = QLabel("No AI players — set White or Black to AI.")
+        self.no_ai_label.setObjectName("SubtleLabel")
+        self.no_ai_label.setWordWrap(True)
+        self.no_ai_label.setVisible(False)
+        layout.addWidget(self.no_ai_label)
 
         # Suggestions
         suggestions_header = QHBoxLayout()
@@ -506,9 +648,31 @@ class Sidebar(QWidget):
     def _kind_for(index: int) -> PlayerKind:
         return PlayerKind.HUMAN if index == 0 else PlayerKind.AI
 
-    def _on_difficulty(self, value: int):
-        self.update_difficulty_label(value)
-        self.difficultyChanged.emit(value)
+    def _make_diff_row(self, color: bool, name: str):
+        row = QWidget()
+        row_layout = QVBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(3)
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(1, 10)
+        slider.setPageStep(1)
+        label = QLabel(name)
+        label.setObjectName("SubtleLabel")
+        row_layout.addWidget(slider)
+        row_layout.addWidget(label)
+        slider.valueChanged.connect(
+            lambda value, c=color: self._on_difficulty(c, value))
+        return row, slider, label
+
+    def _on_difficulty(self, color: bool, value: int):
+        self._update_diff_label(color, value)
+        self.difficultyChanged.emit(color, value)
+
+    def _update_diff_label(self, color: bool, value: int):
+        level = DIFFICULTY_LEVELS[value]
+        label = self.white_diff_label if color == chess.WHITE else self.black_diff_label
+        name = "⚪ White AI" if color == chess.WHITE else "⚫ Black AI"
+        label.setText(f"{name} — Level {value} · {level.label}")
 
     def _on_autoplay_toggled(self, paused: bool):
         self.autoplay_button.setText("▶ Resume AI" if paused else "⏸ Pause AI")
@@ -516,17 +680,64 @@ class Sidebar(QWidget):
 
     # ---- update slots (called from the main window) ----
 
-    def update_difficulty_label(self, value: int):
-        level = DIFFICULTY_LEVELS[value]
-        self.difficulty_label.setText(f"Level {value} — {level.label}")
+    def sync_difficulty(self, white_level: int, black_level: int):
+        for slider, level in ((self.white_diff_slider, white_level),
+                              (self.black_diff_slider, black_level)):
+            slider.blockSignals(True)
+            slider.setValue(level)
+            slider.blockSignals(False)
+        self._update_diff_label(chess.WHITE, white_level)
+        self._update_diff_label(chess.BLACK, black_level)
 
     def sync_players(self, white_kind: PlayerKind, black_kind: PlayerKind):
         for combo, kind in ((self.white_combo, white_kind), (self.black_combo, black_kind)):
             combo.blockSignals(True)
             combo.setCurrentIndex(0 if kind == PlayerKind.HUMAN else 1)
             combo.blockSignals(False)
-        both_ai = white_kind == PlayerKind.AI and black_kind == PlayerKind.AI
-        self.autoplay_button.setEnabled(both_ai)
+        white_ai = white_kind == PlayerKind.AI
+        black_ai = black_kind == PlayerKind.AI
+        self.white_diff_row.setVisible(white_ai)
+        self.black_diff_row.setVisible(black_ai)
+        self.no_ai_label.setVisible(not white_ai and not black_ai)
+        self.autoplay_button.setEnabled(white_ai and black_ai)
+
+    def set_opening(self, name: str):
+        self.opening_label.setText(f"📖 {name}" if name else "")
+        self.opening_label.setVisible(bool(name))
+
+    def set_review(self, series: list, view_index: int, annotations: list,
+                   reviews: dict):
+        self.eval_graph.set_series(series, view_index)
+        self.moves_table.set_annotations(annotations)
+        self.accuracy_label.setText(self._accuracy_text(reviews))
+
+    @staticmethod
+    def _accuracy_text(reviews: dict) -> str:
+        def fmt(review) -> str:
+            if review.accuracy is None:
+                return "—"
+            flaws = []
+            if review.blunder:
+                flaws.append(f"{review.blunder}⛔")
+            if review.mistake:
+                flaws.append(f"{review.mistake}?")
+            if review.inaccuracy:
+                flaws.append(f"{review.inaccuracy}?!")
+            tail = f"  ({' '.join(flaws)})" if flaws else ""
+            return f"{review.accuracy:.0f}%{tail}"
+        white = reviews[chess.WHITE]
+        black = reviews[chess.BLACK]
+        if white.accuracy is None and black.accuracy is None:
+            return "Accuracy: — (analyze the game for a full report)"
+        return f"Accuracy:  ⚪ {fmt(white)}   ⚫ {fmt(black)}"
+
+    def set_review_progress(self, done: int, total: int):
+        if total > 0 and done < total:
+            self.analyze_button.setEnabled(False)
+            self.analyze_button.setText(f"Analyzing… {done}/{total}")
+        else:
+            self.analyze_button.setEnabled(True)
+            self.analyze_button.setText("Analyze game")
 
     def set_turn(self, turn: Optional[chess.Color]):
         self.white_turn_dot.setVisible(turn == chess.WHITE)

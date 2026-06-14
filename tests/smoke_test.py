@@ -42,6 +42,12 @@ def wait_until(predicate, timeout_ms: int = 15000) -> bool:
 
 def main() -> int:
     app = QApplication(sys.argv)
+    # Isolated, empty settings so the run is deterministic and does not inherit
+    # (or pollute) a real install's persisted players/difficulty.
+    app.setOrganizationName("ChessStudioSmokeTest")
+    app.setApplicationName("Chess Studio Smoke Test")
+    from PySide6.QtCore import QSettings
+    QSettings().clear()
     app.setStyle("Fusion")
     app.setStyleSheet(build_stylesheet())
 
@@ -52,6 +58,9 @@ def main() -> int:
     window = MainWindow(engine)
     window.show()
     c = window.controller
+    # Start from a known player configuration regardless of any saved state.
+    c.set_player(chess.WHITE, PlayerKind.HUMAN)
+    c.set_player(chess.BLACK, PlayerKind.AI)
 
     # 1. Analysis arrives for the initial position (suggestions + eval).
     seen = {"suggestions": None, "eval": None}

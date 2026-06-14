@@ -20,6 +20,7 @@ def main() -> int:
         return run_smoke()
 
     app = QApplication(sys.argv)
+    app.setOrganizationName("ChessStudio")
     app.setApplicationName(APP_NAME)
     app.setStyle("Fusion")
     app.setStyleSheet(build_stylesheet())

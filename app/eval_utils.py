@@ -48,6 +48,36 @@ def recommendation_probs(expectations_mover: Sequence[float], temperature: float
     return [w / total for w in weights]
 
 
+# ---- Move-quality classification (for game review) --------------------------
+
+# Symbols shown next to a move in the move list.
+MOVE_SYMBOLS = {
+    "blunder": "??",
+    "mistake": "?",
+    "inaccuracy": "?!",
+    "good": "",
+}
+
+
+def classify_loss(win_loss: float) -> str:
+    """Classify a move by the mover's drop in winning chances (0..1)."""
+    if win_loss >= 0.20:
+        return "blunder"
+    if win_loss >= 0.10:
+        return "mistake"
+    if win_loss >= 0.05:
+        return "inaccuracy"
+    return "good"
+
+
+def move_accuracy(before_pct: float, after_pct: float) -> float:
+    """Single-move accuracy in [0, 100] from the mover's winning percentages
+    before and after the move (each 0..100). Lichess' accuracy curve."""
+    drop = max(0.0, before_pct - after_pct)
+    accuracy = 103.1668 * math.exp(-0.04354 * drop) - 3.1669
+    return max(0.0, min(100.0, accuracy))
+
+
 def format_score_white(score: Optional[chess.engine.PovScore]) -> str:
     """Human-readable eval from White's POV, e.g. '+0.8', '-2.3', '#5', '#-3'."""
     if score is None:
