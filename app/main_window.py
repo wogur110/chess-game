@@ -196,8 +196,9 @@ class MainWindow(QMainWindow):
 
     def _refresh_review(self):
         c = self.controller
-        self.sidebar.set_review(c.eval_series(), c.view_index,
-                                c.move_annotations(), c.accuracy_summary())
+        series, annotations, reviews, moments = c.review_data()
+        self.sidebar.set_review(series, c.view_index, annotations, reviews,
+                                moments, c.best_alternative(c.view_index))
 
     # ---- Controller events ----
 

@@ -14,7 +14,21 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout,
 
 from . import theme
 from .engine_manager import DIFFICULTY_LEVELS
+from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
 from .game_controller import PlayerKind
+
+# Colours per move-quality category (move list + eval-graph dots).
+CATEGORY_COLORS = {
+    "brilliant": "#27c2a0",
+    "great": "#5b9bd5",
+    "best": "#81b64c",
+    "book": "#a98a64",
+    "good": theme.TEXT,
+    "inaccuracy": "#e8c468",
+    "miss": "#f0a35e",
+    "mistake": "#e8943b",
+    "blunder": "#e06c75",
+}
 
 
 # ---- Vertical eval bar (sits next to the board) -------------------------------
@@ -168,10 +182,12 @@ class EvalGraph(QWidget):
         self.setToolTip("Win probability over the game — click to jump to a move")
         self._series: list = []      # white expectation 0..1 or None per position
         self._view = 0
+        self._markers: list = []     # (position_index, category)
 
-    def set_series(self, series: list, view_index: int):
+    def set_series(self, series: list, view_index: int, markers: list = None):
         self._series = list(series)
         self._view = view_index
+        self._markers = list(markers or [])
         self.update()
 
     def _x_for(self, index: int, rect: QRectF) -> float:
@@ -239,6 +255,18 @@ class EvalGraph(QWidget):
             line.lineTo(x, y)
         painter.setPen(QPen(QColor("#10151a"), 1.4))
         painter.drawPath(line)
+
+        # Key-moment dots (brilliancies, mistakes, blunders…)
+        for index, klass in self._markers:
+            if not (first <= index <= last_idx):
+                continue
+            exp = self._series[index]
+            if exp is None:
+                continue
+            cx, cy = self._x_for(index, rect), y_for(exp)
+            painter.setPen(QPen(QColor("#10151a"), 1))
+            painter.setBrush(QColor(CATEGORY_COLORS.get(klass, theme.TEXT_MUTED)))
+            painter.drawEllipse(QRectF(cx - 3.5, cy - 3.5, 7, 7))
 
         # View marker
         painter.setClipping(False)
@@ -429,15 +457,8 @@ class MovesTable(QTableWidget):
                 self.scrollToItem(item)
         self.blockSignals(False)
 
-    ANNOTATION_COLORS = {
-        "blunder": "#e06c75",
-        "mistake": "#e8943b",
-        "inaccuracy": "#e8c468",
-    }
-    ANNOTATION_SYMBOLS = {"blunder": "??", "mistake": "?", "inaccuracy": "?!"}
-
     def set_annotations(self, annotations: list):
-        """Colour each move and append a ?!/?/?? symbol by quality class."""
+        """Colour each move and append its quality symbol (!!, !, ?!, ?, ??…)."""
         for i, san in enumerate(self._san_list):
             slot = i + self._offset
             row, col = slot // 2, 1 + slot % 2
@@ -445,9 +466,9 @@ class MovesTable(QTableWidget):
             if item is None:
                 continue
             klass = annotations[i] if i < len(annotations) else None
-            symbol = self.ANNOTATION_SYMBOLS.get(klass, "")
+            symbol = MOVE_SYMBOLS.get(klass, "")
             item.setText(f"{san}{symbol}")
-            item.setForeground(QColor(self.ANNOTATION_COLORS.get(klass, theme.TEXT)))
+            item.setForeground(QColor(CATEGORY_COLORS.get(klass, theme.TEXT)))
 
     def _on_cell_clicked(self, row: int, col: int):
         item = self.item(row, col)
@@ -519,6 +540,10 @@ class Sidebar(QWidget):
         self.eval_graph = EvalGraph()
         self.eval_graph.plyClicked.connect(self.evalGraphClicked)
         layout.addWidget(self.eval_graph)
+        self.move_detail_label = QLabel("")
+        self.move_detail_label.setWordWrap(True)
+        self.move_detail_label.setVisible(False)
+        layout.addWidget(self.move_detail_label)
         self.accuracy_label = QLabel("Accuracy: —")
         self.accuracy_label.setObjectName("SubtleLabel")
         self.accuracy_label.setWordWrap(True)
@@ -706,23 +731,39 @@ class Sidebar(QWidget):
         self.opening_label.setVisible(bool(name))
 
     def set_review(self, series: list, view_index: int, annotations: list,
-                   reviews: dict):
-        self.eval_graph.set_series(series, view_index)
+                   reviews: dict, markers: list = None, best_alt: str = None):
+        self.eval_graph.set_series(series, view_index, markers)
         self.moves_table.set_annotations(annotations)
         self.accuracy_label.setText(self._accuracy_text(reviews))
+        self._set_move_detail(view_index, annotations, best_alt)
+
+    def _set_move_detail(self, view_index: int, annotations: list, best_alt: str):
+        klass = (annotations[view_index - 1]
+                 if 1 <= view_index <= len(annotations) else None)
+        if klass is None:
+            self.move_detail_label.setVisible(False)
+            return
+        color = CATEGORY_COLORS.get(klass, theme.TEXT)
+        label = MOVE_LABELS.get(klass, "")
+        symbol = MOVE_SYMBOLS.get(klass, "")
+        text = f"{label} {symbol}".strip()
+        if best_alt and klass not in ("brilliant", "great", "best", "book"):
+            text += f"  ·  best was {best_alt}"
+        self.move_detail_label.setText(text)
+        self.move_detail_label.setStyleSheet(
+            f"color: {color}; font-weight: 600; background: transparent;")
+        self.move_detail_label.setVisible(True)
 
     @staticmethod
     def _accuracy_text(reviews: dict) -> str:
+        order = [("brilliant", "!!"), ("great", "!"), ("miss", "✕"),
+                 ("mistake", "?"), ("blunder", "??")]
+
         def fmt(review) -> str:
             if review.accuracy is None:
                 return "—"
-            flaws = []
-            if review.blunder:
-                flaws.append(f"{review.blunder}⛔")
-            if review.mistake:
-                flaws.append(f"{review.mistake}?")
-            if review.inaccuracy:
-                flaws.append(f"{review.inaccuracy}?!")
+            flaws = [f"{review.counts[k]}{sym}" for k, sym in order
+                     if review.counts.get(k)]
             tail = f"  ({' '.join(flaws)})" if flaws else ""
             return f"{review.accuracy:.0f}%{tail}"
         white = reviews[chess.WHITE]

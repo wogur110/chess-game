@@ -24,12 +24,14 @@ position to the Play tab to finish the game against the engine.
 
 ![Opening Study tab — opening browser, board, and master win-rate statistics](docs/images/opening.png)
 
-**Game review** — the opening is named as you play (here a C54 Italian Game),
-an eval graph traces the win probability across the whole game (click it to jump
-to a move), and **Analyze game** scores every move: per-side accuracy and
-`?!` / `?` / `??` annotations in the move list.
+**Game review** — the opening is named as you play (here a C50 Italian Game),
+an eval graph traces the win probability across the whole game with coloured
+dots at the key moments (click to jump there), and **Analyze game** grades every
+move chess.com-style: **Brilliant / Great / Best / Book / Inaccuracy / Miss /
+Mistake / Blunder** in the move list, per-side accuracy, and "best was …" for
+the move you're viewing.
 
-![Game review — opening name, eval graph, accuracy and move annotations](docs/images/review.png)
+![Game review — opening name, eval graph with key moments, accuracy and move grades](docs/images/review.png)
 
 ## Features
 
@@ -40,11 +42,13 @@ to a move), and **Analyze game** scores every move: per-side accuracy and
   - Winning probability (win %): the mover's expected score after that move
 - **Win-probability sidebar** — white/black winning chances as a gauge and numbers
   after every move, plus a vertical evaluation bar next to the board
-- **Game review** — after a game (or any time via **Analyze game**):
-  - an **eval graph** of the win probability across the whole game; click it to
-    jump straight to that move
-  - **per-side accuracy** and a count of inaccuracies / mistakes / blunders
-  - **move annotations** (`?!` / `?` / `??`) coloured in the move list
+- **Game review** (chess.com-style) — after a game, or any time via **Analyze game**:
+  - **move grades** — Brilliant `!!`, Great `!`, Best, Book, Inaccuracy `?!`,
+    Miss `✕`, Mistake `?`, Blunder `??` — coloured in the move list
+  - an **eval graph** of the win probability across the whole game, with coloured
+    dots at the key moments; click anywhere on it to jump to that move
+  - **per-side accuracy** and a count of the notable moves
+  - **"best was …"** shows the engine's best move when you played something else
   - the **opening name** (ECO code) is shown live as you play
 - **Adjustable AI difficulty** — 10 slider levels, from beginner (~800 Elo) to
   full strength (3200+); White and Black AI can be set to different levels for

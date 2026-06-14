@@ -50,13 +50,22 @@ def recommendation_probs(expectations_mover: Sequence[float], temperature: float
 
 # ---- Move-quality classification (for game review) --------------------------
 
-# Symbols shown next to a move in the move list.
+# Ordered best -> worst. Each entry: symbol shown after the move + a short label.
+MOVE_CATEGORIES = [
+    "brilliant", "great", "best", "book", "good",
+    "inaccuracy", "miss", "mistake", "blunder",
+]
 MOVE_SYMBOLS = {
-    "blunder": "??",
-    "mistake": "?",
-    "inaccuracy": "?!",
-    "good": "",
+    "brilliant": "!!", "great": "!", "best": "", "book": "", "good": "",
+    "inaccuracy": "?!", "miss": "✕", "mistake": "?", "blunder": "??",
 }
+MOVE_LABELS = {
+    "brilliant": "Brilliant", "great": "Great", "best": "Best", "book": "Book",
+    "good": "Good", "inaccuracy": "Inaccuracy", "miss": "Miss",
+    "mistake": "Mistake", "blunder": "Blunder",
+}
+# Categories worth surfacing as "key moments" (good surprises and mistakes).
+KEY_CATEGORIES = {"brilliant", "great", "miss", "mistake", "blunder"}
 
 
 def classify_loss(win_loss: float) -> str:
@@ -67,6 +76,37 @@ def classify_loss(win_loss: float) -> str:
         return "mistake"
     if win_loss >= 0.05:
         return "inaccuracy"
+    return "good"
+
+
+def classify_move(loss: float, *, is_book: bool, is_best: bool,
+                  is_sacrifice: bool, only_move: bool,
+                  best_exp: float, achieved_exp: float) -> str:
+    """Rich chess.com-style classification of a single move.
+
+    loss        : mover's drop in winning chances vs the best move (0..1)
+    best_exp    : mover's winning chance with best play (0..1)
+    achieved_exp: mover's winning chance after the move actually played (0..1)
+    """
+    # Known theory is shown as "Book" and not graded — unless it loses enough
+    # to be a real mistake (some named sidelines are objectively dubious).
+    if is_book and loss < 0.15:
+        return "book"
+    # "Miss": a clearly winning/strong move was available and let slip.
+    if loss >= 0.10 and best_exp >= 0.75 and achieved_exp <= 0.55:
+        return "miss"
+    if loss >= 0.20:
+        return "blunder"
+    if loss >= 0.10:
+        return "mistake"
+    if loss >= 0.05:
+        return "inaccuracy"
+    if is_best:
+        if is_sacrifice:
+            return "brilliant"
+        if only_move:
+            return "great"
+        return "best"
     return "good"
 
 

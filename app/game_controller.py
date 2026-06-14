@@ -25,10 +25,43 @@ import chess.pgn
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .engine_manager import DEFAULT_DIFFICULTY, DIFFICULTY_LEVELS, EngineManager
-from .eval_utils import (classify_loss, expectation_for, format_score_white,
-                         move_accuracy, recommendation_probs,
+from .eval_utils import (KEY_CATEGORIES, classify_move, expectation_for,
+                         format_score_white, move_accuracy, recommendation_probs,
                          score_to_expectation_white)
 from .opening_book import load_book
+
+# Piece values (pawns) for the sacrifice heuristic.
+_PIECE_VALUE = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3,
+                chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 0}
+
+
+def _is_sacrifice(board: chess.Board, move: chess.Move) -> bool:
+    """True if `move` offers >= 3 points of material on its destination square
+    (an accepted-or-offered sacrifice), via a light static exchange check."""
+    moved = board.piece_at(move.from_square)
+    if moved is None:
+        return False
+    # The piece left en prise is the promoted piece on a promotion.
+    moved_v = _PIECE_VALUE[move.promotion] if move.promotion \
+        else _PIECE_VALUE[moved.piece_type]
+    if board.is_en_passant(move):
+        captured_v = _PIECE_VALUE[chess.PAWN]
+    else:
+        captured = board.piece_at(move.to_square)
+        captured_v = _PIECE_VALUE[captured.piece_type] if captured else 0
+    after = board.copy(stack=False)
+    after.push(move)
+    to = move.to_square
+    attackers = after.attackers(not moved.color, to)
+    if not attackers:
+        # The piece lands on a safe square — not a sacrifice.
+        return False
+    defenders = after.attackers(moved.color, to)
+    recapture_gain = 0
+    if defenders:
+        recapture_gain = min(_PIECE_VALUE[after.piece_at(a).piece_type]
+                             for a in attackers)
+    return moved_v - captured_v - recapture_gain >= 3
 
 
 class PlayerKind(Enum):
@@ -47,12 +80,18 @@ class Suggestion:
 
 
 @dataclass
+class PosBest:
+    """The engine's verdict for one position (filled by analysis)."""
+    move: chess.Move
+    san: str
+    second_white_exp: Optional[float] = None   # 2nd-best line, white expectation
+
+
+@dataclass
 class ColorReview:
     accuracy: Optional[float]   # 0..100, None if no scored moves
     scored: int
-    blunder: int = 0
-    mistake: int = 0
-    inaccuracy: int = 0
+    counts: dict = field(default_factory=dict)   # category -> count
 
 
 class GameController(QObject):
@@ -86,11 +125,13 @@ class GameController(QObject):
         self._moves: list[chess.Move] = []
         self._san: list[str] = []
         self._scores: list[Optional[chess.engine.PovScore]] = [None]  # per position index
+        self._best: list[Optional[PosBest]] = [None]                  # parallel to _scores
         self._view = 0
         self._generation = 0
         self._game_id = 0     # changes when the move list changes (not on navigation)
         self._review_done = 0
         self._review_total = 0
+        self._review_pending = False   # coalesces reviewChanged during analysis
 
         self.players: dict[chess.Color, PlayerKind] = {
             chess.WHITE: PlayerKind.HUMAN,
@@ -191,9 +232,11 @@ class GameController(QObject):
             del self._moves[self._view:]
             del self._san[self._view:]
             del self._scores[self._view + 1:]
+            del self._best[self._view + 1:]
         self._san.append(board.san(move))
         self._moves.append(move)
         self._scores.append(None)
+        self._best.append(None)
         self._view = len(self._moves)
         self._generation += 1
         self._bump_game()
@@ -225,6 +268,7 @@ class GameController(QObject):
         self._moves.pop()
         self._san.pop()
         del self._scores[len(self._moves) + 1:]
+        del self._best[len(self._moves) + 1:]
 
     def navigate(self, index: int):
         index = max(0, min(len(self._moves), index))
@@ -247,6 +291,7 @@ class GameController(QObject):
         self._moves = []
         self._san = []
         self._scores = [None]
+        self._best = [None]
         self._view = 0
         self.movesChanged.emit()
         self._after_position_change(None, animate=False)
@@ -270,6 +315,7 @@ class GameController(QObject):
         self._moves = applied
         self._san = san
         self._scores = [None] * (len(applied) + 1)
+        self._best = [None] * (len(applied) + 1)
         self._view = len(applied)
         self.players[human_color] = PlayerKind.HUMAN
         self.players[not human_color] = PlayerKind.AI
@@ -315,6 +361,18 @@ class GameController(QObject):
         the engine becomes ready or when player settings change externally."""
         self._refresh_engine_requests()
 
+    def _emit_review_soon(self):
+        """Coalesce a burst of review updates (e.g. one per analyzed position)
+        into a single reviewChanged on the next event-loop tick."""
+        if not self._review_pending:
+            self._review_pending = True
+            QTimer.singleShot(100, self._flush_review)
+
+    def _flush_review(self):
+        if self._review_pending:
+            self._review_pending = False
+            self.reviewChanged.emit()
+
     # ---- Opening identification ------------------------------------------------
 
     def opening_name(self) -> str:
@@ -338,24 +396,43 @@ class GameController(QObject):
                 else score_to_expectation_white(s, ply=base_ply + i)
                 for i, s in enumerate(self._scores)]
 
-    def move_annotations(self) -> list:
-        """Per-ply quality class ('blunder'/'mistake'/'inaccuracy'/'good') or
-        None when the surrounding positions have not been evaluated."""
+    def _classify_at(self, board: chess.Board, i: int, move: chess.Move):
+        """Rich category for move i, or None if positions i / i+1 lack evals.
+        `board` must be the position BEFORE move i."""
+        before = self._scores[i]
+        after = self._scores[i + 1] if i + 1 < len(self._scores) else None
+        if before is None or after is None:
+            return None
         base_ply = self._base.ply()
+        mover = board.turn
+        best_exp = expectation_for(
+            mover, score_to_expectation_white(before, ply=base_ply + i))
+        achieved = expectation_for(
+            mover, score_to_expectation_white(after, ply=base_ply + i + 1))
+        loss = max(0.0, best_exp - achieved)
+
+        best = self._best[i]
+        is_best = best is not None and best.move == move
+        is_book = self._book is not None and any(
+            m.uci == move.uci() for m in self._book.book_replies(board))
+        only_move = False
+        # "Great" only when the single good move keeps a real, still-contested
+        # advantage — not when mopping up an already-won (or lost) position.
+        if is_best and best.second_white_exp is not None and \
+                board.legal_moves.count() > 1 and 0.2 <= best_exp <= 0.85:
+            second_exp = expectation_for(mover, best.second_white_exp)
+            only_move = (best_exp - second_exp) >= 0.15
+        is_sac = is_best and achieved >= 0.55 and _is_sacrifice(board, move)
+        return classify_move(loss, is_book=is_book, is_best=is_best,
+                             is_sacrifice=is_sac, only_move=only_move,
+                             best_exp=best_exp, achieved_exp=achieved)
+
+    def move_annotations(self) -> list:
+        """Per-ply rich quality class, or None where not yet evaluated."""
         board = self._base.copy()
         out: list = []
         for i, move in enumerate(self._moves):
-            before = self._scores[i]
-            after = self._scores[i + 1] if i + 1 < len(self._scores) else None
-            klass = None
-            if before is not None and after is not None:
-                mover = board.turn
-                before_m = expectation_for(
-                    mover, score_to_expectation_white(before, ply=base_ply + i))
-                after_m = expectation_for(
-                    mover, score_to_expectation_white(after, ply=base_ply + i + 1))
-                klass = classify_loss(max(0.0, before_m - after_m))
-            out.append(klass)
+            out.append(self._classify_at(board, i, move))
             board.push(move)
         return out
 
@@ -368,22 +445,79 @@ class GameController(QObject):
             before = self._scores[i]
             after = self._scores[i + 1] if i + 1 < len(self._scores) else None
             mover = board.turn
+            klass = self._classify_at(board, i, move)
             if before is not None and after is not None:
                 before_pct = expectation_for(
                     mover, score_to_expectation_white(before, ply=base_ply + i)) * 100
                 after_pct = expectation_for(
                     mover, score_to_expectation_white(after, ply=base_ply + i + 1)) * 100
                 accs[mover].append(move_accuracy(before_pct, after_pct))
-                klass = classify_loss(max(0.0, (before_pct - after_pct) / 100.0))
-                review = reviews[mover]
-                if klass in ("blunder", "mistake", "inaccuracy"):
-                    setattr(review, klass, getattr(review, klass) + 1)
+                if klass:
+                    counts = reviews[mover].counts
+                    counts[klass] = counts.get(klass, 0) + 1
             board.push(move)
         for color in (chess.WHITE, chess.BLACK):
             vals = accs[color]
             reviews[color].scored = len(vals)
             reviews[color].accuracy = (sum(vals) / len(vals)) if vals else None
         return reviews
+
+    def key_moments(self) -> list:
+        """List of (position_index, category) for the notable moves — used to
+        mark the eval graph and let the user jump to them."""
+        board = self._base.copy()
+        moments: list = []
+        for i, move in enumerate(self._moves):
+            klass = self._classify_at(board, i, move)
+            if klass in KEY_CATEGORIES:
+                moments.append((i + 1, klass))
+            board.push(move)
+        return moments
+
+    def review_data(self):
+        """Single game replay producing everything the review UI needs:
+        (eval_series, annotations, reviews, key_moments). Cheaper than calling
+        move_annotations / accuracy_summary / key_moments separately."""
+        base_ply = self._base.ply()
+        series = self.eval_series()
+        board = self._base.copy()
+        annotations: list = []
+        reviews = {chess.WHITE: ColorReview(None, 0), chess.BLACK: ColorReview(None, 0)}
+        accs = {chess.WHITE: [], chess.BLACK: []}
+        moments: list = []
+        for i, move in enumerate(self._moves):
+            klass = self._classify_at(board, i, move)
+            annotations.append(klass)
+            before = self._scores[i]
+            after = self._scores[i + 1] if i + 1 < len(self._scores) else None
+            mover = board.turn
+            if before is not None and after is not None:
+                before_pct = expectation_for(
+                    mover, score_to_expectation_white(before, ply=base_ply + i)) * 100
+                after_pct = expectation_for(
+                    mover, score_to_expectation_white(after, ply=base_ply + i + 1)) * 100
+                accs[mover].append(move_accuracy(before_pct, after_pct))
+                if klass:
+                    reviews[mover].counts[klass] = reviews[mover].counts.get(klass, 0) + 1
+            if klass in KEY_CATEGORIES:
+                moments.append((i + 1, klass))
+            board.push(move)
+        for color in (chess.WHITE, chess.BLACK):
+            vals = accs[color]
+            reviews[color].scored = len(vals)
+            reviews[color].accuracy = (sum(vals) / len(vals)) if vals else None
+        return series, annotations, reviews, moments
+
+    def best_alternative(self, view_index: int):
+        """For the move that led to `view_index`, the engine's best SAN if the
+        played move was not itself the best move; otherwise None."""
+        i = view_index - 1
+        if i < 0 or i >= len(self._moves):
+            return None
+        best = self._best[i] if i < len(self._best) else None
+        if best is None or best.move == self._moves[i]:
+            return None
+        return best.san
 
     def scored_positions(self) -> int:
         return sum(1 for s in self._scores if s is not None)
@@ -405,26 +539,30 @@ class GameController(QObject):
         self.reviewProgress.emit(0, self._review_total)
         self.engine.request_full_analysis(indexed, self._game_id)
 
-    def _on_full_line(self, game_id: int, index: int, score):
+    def _on_full_line(self, game_id: int, line):
         if game_id != self._game_id:
             return
+        index = line.index
         if 0 <= index < len(self._scores):
-            self._scores[index] = score
+            self._scores[index] = line.score
+            self._best[index] = PosBest(line.best_move, line.best_san,
+                                        line.second_white_exp)
         self._review_done += 1
         self.reviewProgress.emit(self._review_done, self._review_total)
         if index == self._view:
             board = self.view_board()
             self.evalChanged.emit(
-                score_to_expectation_white(score, ply=board.ply()),
-                format_score_white(score))
-        self.reviewChanged.emit()
+                score_to_expectation_white(line.score, ply=board.ply()),
+                format_score_white(line.score))
+        self._emit_review_soon()
 
     def _on_full_done(self, game_id: int, completed: bool):
         if game_id != self._game_id:
             return
         self._review_done = self._review_total
         self.reviewProgress.emit(self._review_total, self._review_total)
-        self.reviewChanged.emit()
+        self._review_pending = True
+        self._flush_review()
 
     def _after_position_change(self, last_move: Optional[chess.Move], animate: bool):
         board = self.view_board()
@@ -492,7 +630,10 @@ class GameController(QObject):
             return
         if 0 <= ctx < len(self._scores):
             self._scores[ctx] = result.lines[0].score
-            self.reviewChanged.emit()
+            best = result.lines[0]
+            second_exp = result.lines[1].expectation_white if len(result.lines) > 1 else None
+            self._best[ctx] = PosBest(best.move, best.san, second_exp)
+            self._emit_review_soon()
         if ctx != self._view:
             return
         board = self.view_board()
@@ -614,6 +755,7 @@ class GameController(QObject):
         self._moves = moves
         self._san = san
         self._scores = scores
+        self._best = [None] * len(scores)
         self._view = 0
         self.movesChanged.emit()
         self._after_position_change(None, animate=False)

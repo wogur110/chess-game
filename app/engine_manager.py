@@ -107,6 +107,15 @@ class AnalysisResult:
     ply: int
 
 
+@dataclass
+class ReviewLine:
+    index: int                              # position index in the game
+    score: chess.engine.PovScore            # best-play eval (white POV)
+    best_move: chess.Move
+    best_san: str
+    second_white_exp: Optional[float] = None  # 2nd-best line, white expectation
+
+
 _STOP = object()
 
 
@@ -210,7 +219,7 @@ class EngineManager(QObject):
 
     analysisReady = Signal(int, int, object)   # generation, ctx, AnalysisResult
     moveReady = Signal(int, object)            # generation, chess.Move
-    fullAnalysisLine = Signal(int, int, object)  # game_id, position index, PovScore
+    fullAnalysisLine = Signal(int, object)       # game_id, ReviewLine
     fullAnalysisDone = Signal(int, bool)         # game_id, completed
     engineError = Signal(str)
 
@@ -325,12 +334,28 @@ class EngineManager(QObject):
                 if board.is_game_over():
                     continue
                 try:
-                    info = engine.analyse(board, FULL_ANALYSIS_LIMIT)
+                    infos = engine.analyse(board, FULL_ANALYSIS_LIMIT, multipv=2)
                 except Exception:
                     continue
-                score = info.get("score") if isinstance(info, dict) else None
-                if score is not None:
-                    self.fullAnalysisLine.emit(game_id, idx, score)
+                if isinstance(infos, dict):
+                    infos = [infos]
+                best = infos[0]
+                pv = best.get("pv")
+                score = best.get("score")
+                if not pv or score is None:
+                    continue
+                best_move = pv[0]
+                try:
+                    best_san = board.san(best_move)
+                except Exception:
+                    continue
+                second_exp = None
+                if len(infos) > 1 and infos[1].get("score") is not None:
+                    second_exp = score_to_expectation_white(
+                        infos[1]["score"], ply=board.ply())
+                self.fullAnalysisLine.emit(game_id, ReviewLine(
+                    index=idx, score=score, best_move=best_move,
+                    best_san=best_san, second_white_exp=second_exp))
             self.fullAnalysisDone.emit(game_id, completed)
 
         job.keep = True   # don't let the latest-wins drain discard this
