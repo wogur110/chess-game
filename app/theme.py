@@ -147,9 +147,23 @@ QComboBox QAbstractItemView {{
     background-color: {BG_PANEL_LIGHT};
     border: 1px solid {BORDER};
     border-radius: 6px;
+    color: {TEXT};
     selection-background-color: {ACCENT_DARK};
     selection-color: #ffffff;
     outline: none;
+    padding: 4px;
+}}
+QComboBox QAbstractItemView::item {{
+    background-color: {BG_PANEL_LIGHT};
+    color: {TEXT};
+    padding: 5px 8px;
+    min-height: 22px;
+    border-radius: 4px;
+}}
+QComboBox QAbstractItemView::item:selected,
+QComboBox QAbstractItemView::item:hover {{
+    background-color: {ACCENT_DARK};
+    color: #ffffff;
 }}
 
 /* ---- Slider ---- */
