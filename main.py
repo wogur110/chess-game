@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication
 from app import APP_NAME
 from app.engine_manager import EngineManager
 from app.main_window import MainWindow
-from app.theme import build_stylesheet
+from app.theme import build_palette, build_stylesheet
 
 
 def main() -> int:
@@ -23,6 +23,7 @@ def main() -> int:
     app.setOrganizationName("ChessStudio")
     app.setApplicationName(APP_NAME)
     app.setStyle("Fusion")
+    app.setPalette(build_palette())
     app.setStyleSheet(build_stylesheet())
 
     engine = EngineManager()

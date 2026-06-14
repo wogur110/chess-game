@@ -1,5 +1,7 @@
 """Dark modern theme: color palette and application stylesheet."""
 
+from PySide6.QtGui import QColor, QPalette
+
 # ---- Palette ----------------------------------------------------------------
 BG_MAIN = "#15181e"          # window background
 BG_PANEL = "#1d222a"         # sidebar / panel background
@@ -29,6 +31,31 @@ ARROW_COLORS = ["#2dd4a0", "#46b1e1", "#c084fc"]
 
 EVALBAR_WHITE = "#e8eaed"
 EVALBAR_BLACK = "#2a2e36"
+
+
+def build_palette() -> QPalette:
+    """Dark palette. Item views (notably QComboBox dropdown popups) and other
+    native-painted widgets take their background/text from the palette, NOT the
+    stylesheet, so this is required for the dropdowns to render dark."""
+    p = QPalette()
+    p.setColor(QPalette.Window, QColor(BG_MAIN))
+    p.setColor(QPalette.WindowText, QColor(TEXT))
+    p.setColor(QPalette.Base, QColor(BG_PANEL_LIGHT))          # item views, line edits, combo popup
+    p.setColor(QPalette.AlternateBase, QColor(BG_PANEL))
+    p.setColor(QPalette.ToolTipBase, QColor(BG_PANEL_LIGHT))
+    p.setColor(QPalette.ToolTipText, QColor(TEXT))
+    p.setColor(QPalette.Text, QColor(TEXT))                    # text in item views
+    p.setColor(QPalette.Button, QColor(BG_PANEL_LIGHT))
+    p.setColor(QPalette.ButtonText, QColor(TEXT))
+    p.setColor(QPalette.BrightText, QColor("#ffffff"))
+    p.setColor(QPalette.Highlight, QColor(ACCENT_DARK))
+    p.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+    p.setColor(QPalette.PlaceholderText, QColor(TEXT_MUTED))
+    p.setColor(QPalette.Link, QColor(ACCENT))
+    p.setColor(QPalette.Disabled, QPalette.Text, QColor(TEXT_DIM))
+    p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(TEXT_DIM))
+    p.setColor(QPalette.Disabled, QPalette.WindowText, QColor(TEXT_DIM))
+    return p
 
 
 def build_stylesheet() -> str:
