@@ -499,6 +499,7 @@ class Sidebar(QWidget):
     navigateClicked = Signal(str)               # "start" | "back" | "fwd" | "end"
     autoplayToggled = Signal(bool)
     hintsToggled = Signal(bool)
+    coachToggled = Signal(bool)
     flipClicked = Signal()
     suggestionClicked = Signal(object)
     analyzeClicked = Signal()
@@ -599,6 +600,12 @@ class Sidebar(QWidget):
         suggestions_header = QHBoxLayout()
         suggestions_header.addWidget(_section_label("AI suggestions"))
         suggestions_header.addStretch(1)
+        self.coach_checkbox = QCheckBox("Coach")
+        self.coach_checkbox.setToolTip(
+            "Warn immediately when your move throws away 10%+ win chance,\n"
+            "holding the AI reply so you can take the move back and retry")
+        self.coach_checkbox.toggled.connect(self.coachToggled)
+        suggestions_header.addWidget(self.coach_checkbox)
         self.hints_checkbox = QCheckBox("Arrows")
         self.hints_checkbox.setChecked(True)
         self.hints_checkbox.toggled.connect(self.hintsToggled)

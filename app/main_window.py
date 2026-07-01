@@ -8,18 +8,19 @@ import sys
 from pathlib import Path
 
 import chess
-from PySide6.QtCore import QByteArray, QSettings, Qt
+from PySide6.QtCore import QByteArray, QSettings, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QMainWindow,
-                               QMessageBox, QScrollArea, QTabWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel,
+                               QMainWindow, QMessageBox, QPushButton,
+                               QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
-from . import APP_NAME
+from . import APP_NAME, theme
 from .board_widget import BoardWidget, sprites
 from .engine_manager import EngineManager
+from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
 from .game_controller import GameController, PlayerKind
 from .opening_tab import OpeningStudyTab
-from .sidebar import EvalBar, Sidebar
+from .sidebar import CATEGORY_COLORS, EvalBar, Sidebar
 
 
 def _default_save_dir() -> Path:
@@ -39,6 +40,58 @@ def _default_save_dir() -> Path:
     return directory
 
 
+class CoachBanner(QFrame):
+    """Slides in over the Play tab when coach mode flags the player's move."""
+
+    takeBackClicked = Signal()
+    showWhyClicked = Signal()
+    playOnClicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("CoachBanner")
+        self.setVisible(False)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+        self.label = QLabel("")
+        self.label.setWordWrap(True)
+        layout.addWidget(self.label, 1)
+        self.take_back_button = QPushButton("↩ Take back")
+        self.take_back_button.setObjectName("PrimaryButton")
+        self.why_button = QPushButton("Show why")
+        self.play_on_button = QPushButton("Keep move")
+        for button, signal in ((self.take_back_button, self.takeBackClicked),
+                               (self.why_button, self.showWhyClicked),
+                               (self.play_on_button, self.playOnClicked)):
+            button.clicked.connect(signal)
+            layout.addWidget(button)
+
+    def show_alert(self, alert):
+        label = MOVE_LABELS.get(alert.category, "Mistake")
+        symbol = MOVE_SYMBOLS.get(alert.category, "?")
+        text = (f"<b>{label} {symbol}</b> — your win chance fell "
+                f"{alert.before_exp * 100:.0f}% → {alert.after_exp * 100:.0f}%.")
+        if alert.best_san:
+            text += f"  Best was <b>{alert.best_san}</b>."
+        self.label.setText(text)
+        color = CATEGORY_COLORS.get(alert.category, theme.BAD)
+        self.setStyleSheet(
+            f"QFrame#CoachBanner {{ background-color: {theme.BG_PANEL};"
+            f" border: 1px solid {color}; border-radius: 8px; }}")
+        self.why_button.setEnabled(True)
+        self.setVisible(True)
+
+    def reveal_refutation(self, pv_san: list):
+        if pv_san:
+            line = " ".join(pv_san[:4])
+            self.label.setText(self.label.text() + f"  Punished by: <b>{line}</b>")
+        self.why_button.setEnabled(False)
+
+    def hide_alert(self):
+        self.setVisible(False)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, engine: EngineManager):
         super().__init__()
@@ -49,6 +102,7 @@ class MainWindow(QMainWindow):
         self.engine = engine
         self.controller = GameController(engine, self)
         self._auto_orient = True
+        self._coach_alert = None
 
         self.tabs = QTabWidget(self)
         self.tabs.setDocumentMode(True)
@@ -62,8 +116,13 @@ class MainWindow(QMainWindow):
         self.eval_bar = EvalBar()
         root.addWidget(self.eval_bar)
 
+        board_col = QVBoxLayout()
+        board_col.setSpacing(10)
+        self.coach_banner = CoachBanner()
+        board_col.addWidget(self.coach_banner)
         self.board = BoardWidget()
-        root.addWidget(self.board, 1)
+        board_col.addWidget(self.board, 1)
+        root.addLayout(board_col, 1)
 
         panel = QFrame()
         panel.setObjectName("SidePanel")
@@ -129,6 +188,10 @@ class MainWindow(QMainWindow):
         c.reviewChanged.connect(self._refresh_review)
         c.reviewProgress.connect(self.sidebar.set_review_progress)
         c.engineMissing.connect(self._on_engine_error)
+        c.coachAlert.connect(self._on_coach_alert)
+        self.coach_banner.takeBackClicked.connect(self._on_coach_take_back)
+        self.coach_banner.showWhyClicked.connect(self._on_coach_show_why)
+        self.coach_banner.playOnClicked.connect(self._on_coach_play_on)
 
     def _connect_sidebar(self):
         s = self.sidebar
@@ -142,6 +205,7 @@ class MainWindow(QMainWindow):
         s.navigateClicked.connect(self._on_navigate)
         s.autoplayToggled.connect(self.controller.set_autoplay)
         s.hintsToggled.connect(self.board.set_show_hints)
+        s.coachToggled.connect(self._on_coach_toggled)
         s.flipClicked.connect(self._on_flip)
         s.suggestionClicked.connect(self._on_suggestion_clicked)
         s.analyzeClicked.connect(self.controller.analyze_game)
@@ -216,6 +280,7 @@ class MainWindow(QMainWindow):
     def _on_view_changed(self, view_index: int, total: int):
         self.sidebar.moves_table.set_current(view_index)
         self.sidebar.set_nav_state(view_index, total)
+        self._dismiss_coach_banner()
         self._refresh_review()
 
     def _on_players_changed(self):
@@ -235,6 +300,37 @@ class MainWindow(QMainWindow):
 
     def _on_engine_error(self, message: str):
         QMessageBox.warning(self, APP_NAME, message)
+
+    # ---- Coach mode ----
+
+    def _on_coach_toggled(self, enabled: bool):
+        self.controller.set_coach_enabled(enabled)
+        if not enabled:
+            self._dismiss_coach_banner()
+
+    def _on_coach_alert(self, alert):
+        self._coach_alert = alert
+        self.coach_banner.show_alert(alert)
+
+    def _on_coach_take_back(self):
+        self._dismiss_coach_banner()
+        self.controller.undo()
+
+    def _on_coach_show_why(self):
+        alert = getattr(self, "_coach_alert", None)
+        if alert is None:
+            return
+        self.board.set_coach_arrow(alert.refutation_move)
+        self.coach_banner.reveal_refutation(alert.refutation_san)
+
+    def _on_coach_play_on(self):
+        self._dismiss_coach_banner()
+        self.controller.coach_play_on()
+
+    def _dismiss_coach_banner(self):
+        self._coach_alert = None
+        self.coach_banner.hide_alert()
+        self.board.set_coach_arrow(None)
 
     # ---- Sidebar events ----
 
@@ -355,6 +451,8 @@ class MainWindow(QMainWindow):
 
         hints = self._as_bool(s.value("hints"), True)
         self.sidebar.hints_checkbox.setChecked(hints)   # drives the board too
+        coach = self._as_bool(s.value("coach"), False)
+        self.sidebar.coach_checkbox.setChecked(coach)   # drives the controller too
 
         tab = s.value("tab")
         if tab is not None:
@@ -383,6 +481,7 @@ class MainWindow(QMainWindow):
         s.setValue("difficulty/white", c.difficulty_for(chess.WHITE))
         s.setValue("difficulty/black", c.difficulty_for(chess.BLACK))
         s.setValue("hints", self.sidebar.hints_checkbox.isChecked())
+        s.setValue("coach", self.sidebar.coach_checkbox.isChecked())
         s.setValue("tab", self.tabs.currentIndex())
 
     # ---- Shutdown ----

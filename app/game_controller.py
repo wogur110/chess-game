@@ -25,8 +25,9 @@ import chess.pgn
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .engine_manager import DEFAULT_DIFFICULTY, DIFFICULTY_LEVELS, EngineManager
-from .eval_utils import (KEY_CATEGORIES, classify_move, expectation_for,
-                         format_score_white, move_accuracy, recommendation_probs,
+from .eval_utils import (KEY_CATEGORIES, MOVE_LABELS, classify_loss,
+                         classify_move, expectation_for, format_score_white,
+                         move_accuracy, recommendation_probs,
                          score_to_expectation_white)
 from .opening_book import load_book
 
@@ -94,6 +95,19 @@ class ColorReview:
     counts: dict = field(default_factory=dict)   # category -> count
 
 
+@dataclass
+class CoachAlert:
+    """Coach-mode verdict on the human's last move (emitted before the AI
+    is allowed to reply)."""
+    category: str                 # "mistake" | "blunder"
+    loss: float                   # mover's drop in win expectation (0..1)
+    before_exp: float             # mover POV, with best play
+    after_exp: float              # mover POV, after the played move
+    best_san: Optional[str]       # the better move, when known
+    refutation_move: Optional[chess.Move]   # opponent's strongest reply
+    refutation_san: list          # SAN line the opponent now has
+
+
 class GameController(QObject):
     positionChanged = Signal(object, object, bool)   # board, last_move|None, animate
     movesChanged = Signal()                          # history structure changed
@@ -107,9 +121,12 @@ class GameController(QObject):
     reviewChanged = Signal()                         # eval series / annotations changed
     reviewProgress = Signal(int, int)                # done, total (0,0 = idle)
     engineMissing = Signal(str)
+    coachAlert = Signal(object)                      # CoachAlert
 
     AI_DELAY_MS = 150
     AI_VS_AI_DELAY_MS = 450
+    COACH_LOSS_THRESHOLD = 0.10   # warn on mistakes (>=10%) and blunders
+    COACH_TIMEOUT_MS = 4000       # never hold the AI longer than this
 
     def __init__(self, engine: EngineManager, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -143,6 +160,13 @@ class GameController(QObject):
         }
         self.autoplay = True          # gates AI-vs-AI continuous play
         self._ai_thinking = False
+
+        # Coach mode: after a human move (vs an AI opponent) the AI reply is
+        # held until the fresh analysis judges the move; a big drop raises a
+        # CoachAlert and keeps holding until the user decides.
+        self.coach_enabled = False
+        self._coach_wait: Optional[dict] = None    # {"index", "generation"}
+        self._coach_alert: Optional[CoachAlert] = None
 
     # ---- Derived state -------------------------------------------------------
 
@@ -227,6 +251,7 @@ class GameController(QObject):
         board = self.view_board()
         if move not in board.legal_moves:
             return False
+        mover = board.turn
         if not self.is_live:
             # Branch from the reviewed position: discard the rest of the line.
             del self._moves[self._view:]
@@ -241,9 +266,31 @@ class GameController(QObject):
         self._generation += 1
         self._bump_game()
         self._set_thinking(False)
+        self._arm_coach(mover)
         self.movesChanged.emit()
         self._after_position_change(move, animate)
         return True
+
+    def _arm_coach(self, mover: chess.Color):
+        """Hold the AI reply until analysis judges the human's move."""
+        self._coach_wait = None
+        if not (self.coach_enabled and self.engine.available
+                and self.players[mover] == PlayerKind.HUMAN
+                and self.players[not mover] == PlayerKind.AI
+                and self.outcome(self.live_board()) is None):
+            return
+        self._coach_wait = {"index": len(self._moves) - 1,
+                            "generation": self._generation}
+        generation = self._generation
+        QTimer.singleShot(self.COACH_TIMEOUT_MS,
+                          lambda: self._coach_timeout(generation))
+
+    def _coach_timeout(self, generation: int):
+        """Analysis never arrived — release the held AI reply."""
+        wait = self._coach_wait
+        if wait and wait["generation"] == generation == self._generation:
+            self._coach_wait = None
+            self._maybe_start_ai()
 
     def undo(self):
         """Destructively take back the last move; against an AI opponent,
@@ -565,6 +612,7 @@ class GameController(QObject):
         self._flush_review()
 
     def _after_position_change(self, last_move: Optional[chess.Move], animate: bool):
+        self._coach_alert = None   # any position change resolves a pending alert
         board = self.view_board()
         self.positionChanged.emit(board, last_move, animate)
         self.viewChanged.emit(self._view, len(self._moves))
@@ -605,6 +653,8 @@ class GameController(QObject):
             return
         if self._ai_thinking:
             return
+        if self._coach_hold_active():
+            return
         self._set_thinking(True)
         delay = self.AI_VS_AI_DELAY_MS if both_ai else self.AI_DELAY_MS
         generation = self._generation
@@ -634,6 +684,7 @@ class GameController(QObject):
             second_exp = result.lines[1].expectation_white if len(result.lines) > 1 else None
             self._best[ctx] = PosBest(best.move, best.san, second_exp)
             self._emit_review_soon()
+        self._maybe_coach_judge(ctx, result)
         if ctx != self._view:
             return
         board = self.view_board()
@@ -654,6 +705,69 @@ class GameController(QObject):
             for line, rec, exp in zip(result.lines, recs, mover_exps)
         ]
         self.suggestionsChanged.emit(suggestions)
+
+    # ---- Coach mode ------------------------------------------------------------
+
+    def _coach_hold_active(self) -> bool:
+        if self._coach_alert is not None:
+            return True
+        wait = self._coach_wait
+        return wait is not None and wait["generation"] == self._generation
+
+    def _maybe_coach_judge(self, ctx: int, result):
+        """Fresh analysis arrived — if it evaluates the position right after a
+        held human move, judge that move and either alert or release the AI."""
+        wait = self._coach_wait
+        if wait is None or wait["generation"] != self._generation:
+            return
+        if ctx != wait["index"] + 1:
+            return
+        self._coach_wait = None
+        i = wait["index"]
+        before = self._scores[i] if i < len(self._scores) else None
+        if before is None:
+            # The pre-move position was never analysed (very fast play) —
+            # nothing to compare against, so just let the AI reply.
+            self._maybe_start_ai()
+            return
+        base_ply = self._base.ply()
+        mover = not self.live_board().turn
+        best_exp = expectation_for(
+            mover, score_to_expectation_white(before, ply=base_ply + i))
+        achieved = expectation_for(
+            mover, score_to_expectation_white(result.lines[0].score,
+                                              ply=base_ply + i + 1))
+        loss = max(0.0, best_exp - achieved)
+        if loss < self.COACH_LOSS_THRESHOLD:
+            self._maybe_start_ai()
+            return
+        best = self._best[i] if i < len(self._best) else None
+        best_san = None
+        if best is not None and i < len(self._moves) and best.move != self._moves[i]:
+            best_san = best.san
+        refutation = result.lines[0]
+        self._coach_alert = CoachAlert(
+            category=classify_loss(loss), loss=loss,
+            before_exp=best_exp, after_exp=achieved, best_san=best_san,
+            refutation_move=refutation.move,
+            refutation_san=list(refutation.pv_san))
+        self._emit_status()
+        self.coachAlert.emit(self._coach_alert)
+
+    def coach_play_on(self):
+        """User chose to keep the flagged move — let the AI reply."""
+        self._coach_alert = None
+        self._emit_status()
+        self._maybe_start_ai()
+
+    def set_coach_enabled(self, enabled: bool):
+        self.coach_enabled = enabled
+        if not enabled:
+            self._coach_wait = None
+            if self._coach_alert is not None:
+                self._coach_alert = None
+                self._emit_status()
+            self._maybe_start_ai()
 
     def _set_thinking(self, value: bool):
         if self._ai_thinking != value:
@@ -677,6 +791,9 @@ class GameController(QObject):
         turn_name = "White" if board.turn == chess.WHITE else "Black"
         if not self.is_live:
             return f"Reviewing — position after move {self._view} of {len(self._moves)}"
+        if self._coach_alert is not None:
+            label = MOVE_LABELS.get(self._coach_alert.category, "Mistake")
+            return f"Coach — that looks like a {label.lower()}. Take back or keep it?"
         if self.players[board.turn] == PlayerKind.AI:
             both_ai = not self.human_colors()
             if both_ai and not self.autoplay:

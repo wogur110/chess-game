@@ -50,6 +50,10 @@ the move you're viewing.
   - **per-side accuracy** and a count of the notable moves
   - **"best was …"** shows the engine's best move when you played something else
   - the **opening name** (ECO code) is shown live as you play
+- **Coach mode** — optional; when your move throws away 10%+ of your win
+  chance, the AI's reply is held and a banner offers **Take back** (retry the
+  move yourself), **Show why** (the refutation is drawn as a red arrow), or
+  **Keep move** — immediate feedback at the moment of the mistake
 - **Adjustable AI difficulty** — 10 slider levels, from beginner (~800 Elo) to
   full strength (3200+); White and Black AI can be set to different levels for
   engine-vs-engine matchups
@@ -142,6 +146,7 @@ the whole `dist\ChessStudio` folder (Stockfish included, works offline).
 | Undo | `Ctrl+Z` or the Undo button |
 | New game / Save / Load | `Ctrl+N` / `Ctrl+S` / `Ctrl+O` |
 | Toggle suggestion arrows | "Arrows" checkbox in the sidebar |
+| Toggle coach warnings | "Coach" checkbox in the sidebar |
 | Play a suggested move | Click its row in the sidebar |
 | Review the whole game | "Analyze game" in the sidebar (accuracy + annotations) |
 | Jump to a move from the graph | Click the eval graph in the sidebar |

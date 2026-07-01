@@ -109,6 +109,7 @@ class BoardWidget(QWidget):
         self._movable: list[chess.Color] = [chess.WHITE]
         self._suggestions: list = []
         self._show_hints = True
+        self._coach_arrow: Optional[chess.Move] = None
 
         self._selected: Optional[chess.Square] = None
         self._legal_targets: set[chess.Square] = set()
@@ -133,6 +134,7 @@ class BoardWidget(QWidget):
         prev = self._board
         self._board = board.copy(stack=False)
         self._last_move = last_move
+        self._coach_arrow = None
         self._clear_selection()
         self._anim.stop()
         self._anim_move = None
@@ -174,6 +176,11 @@ class BoardWidget(QWidget):
 
     def set_show_hints(self, show: bool):
         self._show_hints = show
+        self.update()
+
+    def set_coach_arrow(self, move: Optional[chess.Move]):
+        """A red arrow showing the refutation of the player's last move."""
+        self._coach_arrow = move
         self.update()
 
     # ---- Geometry ----
@@ -398,6 +405,12 @@ class BoardWidget(QWidget):
         # Suggestion arrows above the pieces (so they stay readable)
         if self._show_hints and self._suggestions and not self._dragging:
             self._paint_suggestions(painter, s)
+
+        # Coach refutation arrow (red, on top of the suggestions)
+        if self._coach_arrow is not None and not self._dragging:
+            color = QColor(theme.BAD)
+            color.setAlpha(215)
+            self._paint_arrow(painter, self._coach_arrow, color, s * 0.17)
 
         # Animated piece
         if animating and self._anim_piece is not None:
