@@ -60,6 +60,13 @@ FULL_ANALYSIS_LIMIT = chess.engine.Limit(depth=16, time=0.25)
 THREAT_LIMIT = chess.engine.Limit(depth=14, time=0.35)
 MULTIPV = 3
 
+# Puzzle verification: a mistake position only becomes a puzzle when the
+# best move is clearly unique and does not leave the solver lost.
+PUZZLE_VERIFY_LIMIT = chess.engine.Limit(depth=18, time=0.5)
+PUZZLE_MIN_GAP = 0.18          # best-vs-second expectation gap (mover POV)
+PUZZLE_MIN_BEST_EXP = 0.45     # best line must not be lost for the solver
+PUZZLE_MAX_SOLUTION_PLIES = 5
+
 
 # ---- Engine discovery --------------------------------------------------------
 
@@ -159,11 +166,13 @@ class _Worker:
         try:
             while True:
                 job = self.queue.get()
-                # Latest-wins for ordinary jobs, but a "keep" job (whole-game
-                # review) must never be discarded by a newer interactive job.
-                pending_keep = None
+                # Latest-wins for ordinary jobs, but "keep" jobs (whole-game
+                # review, puzzle verification) must never be discarded — not
+                # by a newer interactive job, and not by each other.
+                pending_keep: list = []
                 if job is not _STOP and getattr(job, "keep", False):
-                    pending_keep, job = job, None
+                    pending_keep.append(job)
+                    job = None
                 stop = job is _STOP
                 while True:
                     try:
@@ -173,14 +182,14 @@ class _Worker:
                     if nxt is _STOP:
                         stop = True
                     elif getattr(nxt, "keep", False):
-                        pending_keep = nxt
+                        pending_keep.append(nxt)
                     else:
                         job = nxt
                 if stop:
                     break
-                # Run the interactive job first (keeps the view fresh), then the
-                # long review job.
-                for task in (job, pending_keep):
+                # Run the interactive job first (keeps the view fresh), then
+                # the long keep jobs in arrival order.
+                for task in (job, *pending_keep):
                     if task is None:
                         continue
                     engine = self._execute(task, engine)
@@ -224,6 +233,7 @@ class EngineManager(QObject):
     moveReady = Signal(int, object)            # generation, chess.Move
     fullAnalysisLine = Signal(int, object)       # game_id, ReviewLine
     fullAnalysisDone = Signal(int, bool)         # game_id, completed
+    puzzlesVerified = Signal(int, object)        # deck_id, list[dict]
     engineError = Signal(str)
 
     def __init__(self, parent: Optional[QObject] = None):
@@ -401,6 +411,71 @@ class EngineManager(QObject):
 
         job.keep = True   # don't let the latest-wins drain discard this
         self._analysis.submit(job)
+
+    def request_puzzle_verify(self, candidates: list, deck_id: int):
+        """Check candidate mistake-positions for a unique, sound solution.
+        Each candidate dict needs 'fen'; all other fields pass through to the
+        result untouched. Runs as a keep job so interactive analysis never
+        evicts it; results come back in one puzzlesVerified emission."""
+        if not self._analysis:
+            return
+        snapshots = [(dict(cand), chess.Board(cand["fen"])) for cand in candidates]
+
+        def job(engine: chess.engine.SimpleEngine, worker: _Worker):
+            results = []
+            for cand, board in snapshots:
+                verified = self._verify_puzzle(engine, board)
+                if verified is not None:
+                    cand["solution"], cand["solution_san"] = verified
+                    results.append(cand)
+            self.puzzlesVerified.emit(deck_id, results)
+
+        job.keep = True
+        self._analysis.submit(job)
+
+    @staticmethod
+    def _verify_puzzle(engine: chess.engine.SimpleEngine,
+                       board: chess.Board):
+        """Return (solution_ucis, solution_sans) when the position has one
+        clearly best move, else None."""
+        if board.is_game_over():
+            return None
+        try:
+            infos = engine.analyse(board, PUZZLE_VERIFY_LIMIT, multipv=2)
+        except Exception:
+            return None
+        if isinstance(infos, dict):
+            infos = [infos]
+        pv = infos[0].get("pv")
+        score = infos[0].get("score")
+        if not pv or score is None:
+            return None
+
+        def mover_exp(sc) -> float:
+            exp_white = score_to_expectation_white(sc, ply=board.ply())
+            return exp_white if board.turn == chess.WHITE else 1.0 - exp_white
+
+        best_exp = mover_exp(score)
+        if best_exp < PUZZLE_MIN_BEST_EXP:
+            return None
+        if len(infos) > 1 and infos[1].get("score") is not None:
+            if best_exp - mover_exp(infos[1]["score"]) < PUZZLE_MIN_GAP:
+                return None   # a second move is nearly as good — no puzzle
+        ucis: list[str] = []
+        sans: list[str] = []
+        line_board = board.copy(stack=False)
+        for move in pv[:PUZZLE_MAX_SOLUTION_PLIES]:
+            try:
+                sans.append(line_board.san(move))
+            except Exception:
+                break
+            ucis.append(move.uci())
+            line_board.push(move)
+        if len(ucis) % 2 == 0:   # the solution must end on a solver move
+            ucis, sans = ucis[:-1], sans[:-1]
+        if not ucis:
+            return None
+        return ucis, sans
 
     def shutdown(self):
         self._full_gen += 1

@@ -61,6 +61,11 @@ the move you're viewing.
   opponent is threatening: red arrows for the moves they would play if you
   passed, red rings on your hanging pieces — trains the "what does my
   opponent want?" habit
+- **Tactics tab: puzzles from your own mistakes** — after "Analyze game",
+  every miss/mistake/blunder you played is verified by the engine (unique,
+  sound best move) and becomes a puzzle: re-solve the exact position you
+  misplayed, with the wrong try flashed back, hints on demand and the origin
+  of each card shown ("Blunder from your game …, move 23")
 - **Adjustable AI difficulty** — 10 slider levels, from beginner (~800 Elo) to
   full strength (3200+); White and Black AI can be set to different levels for
   engine-vs-engine matchups
@@ -176,6 +181,8 @@ app/
   sidebar.py             win bar, suggestions panel, move list, controls
   opening_book.py        bundled opening DB loader (EPD-keyed, transposition-aware)
   opening_tab.py         opening study tab (browser, demo/drill, stats panel)
+  puzzle_store.py        personal tactics deck (mined mistakes + Leitner scheduling)
+  tactics_tab.py         tactics tab (re-solve your own mistakes)
   data/openings.json.gz  opening tree + master-game statistics (committed)
   main_window.py         assembles everything (Play / Opening Study tabs)
 tools/

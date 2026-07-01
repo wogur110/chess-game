@@ -30,6 +30,7 @@ from .eval_utils import (KEY_CATEGORIES, MOVE_LABELS, classify_loss,
                          move_accuracy, recommendation_probs,
                          score_to_expectation_white)
 from .opening_book import load_book
+from .puzzle_store import Puzzle
 
 # Piece values (pawns) for the sacrifice heuristic.
 _PIECE_VALUE = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3,
@@ -123,6 +124,10 @@ class GameController(QObject):
     engineMissing = Signal(str)
     coachAlert = Signal(object)                      # CoachAlert
     threatsChanged = Signal(list)                    # opponent threats (moves)
+    puzzlesReady = Signal(list)                      # list[Puzzle] from review
+
+    # Move grades that get mined into personal tactics puzzles.
+    MINE_CATEGORIES = ("miss", "mistake", "blunder")
 
     AI_DELAY_MS = 150
     AI_VS_AI_DELAY_MS = 450
@@ -137,6 +142,7 @@ class GameController(QObject):
         self.engine.threatsReady.connect(self._on_threats)
         self.engine.fullAnalysisLine.connect(self._on_full_line)
         self.engine.fullAnalysisDone.connect(self._on_full_done)
+        self.engine.puzzlesVerified.connect(self._on_puzzles_verified)
         self.engine.engineError.connect(self.engineMissing)
         self._book = load_book()
 
@@ -624,6 +630,45 @@ class GameController(QObject):
         self.reviewProgress.emit(self._review_total, self._review_total)
         self._review_pending = True
         self._flush_review()
+        if completed:
+            self._mine_puzzles()
+
+    # ---- Puzzle mining (feeds the Tactics tab) ---------------------------------
+
+    def _mine_puzzles(self):
+        """Turn the reviewed game's human mistakes into puzzle candidates and
+        hand them to the engine for solution verification."""
+        board = self._base.copy()
+        today = datetime.date.today().isoformat()
+        candidates: list = []
+        for i, move in enumerate(self._moves):
+            klass = self._classify_at(board, i, move)
+            if klass in self.MINE_CATEGORIES and \
+                    self.players[board.turn] == PlayerKind.HUMAN:
+                candidates.append({
+                    "key": f"{board.epd()}|{move.uci()}",
+                    "fen": board.fen(),
+                    "category": klass,
+                    "played_san": self._san[i],
+                    "source": {
+                        "date": today,
+                        "white": self._player_name(chess.WHITE),
+                        "black": self._player_name(chess.BLACK),
+                        "move_no": board.fullmove_number,
+                        "mover": "White" if board.turn == chess.WHITE else "Black",
+                    },
+                })
+            board.push(move)
+        if candidates:
+            self.engine.request_puzzle_verify(candidates, self._game_id)
+
+    def _on_puzzles_verified(self, deck_id: int, results: list):
+        puzzles = [Puzzle(key=r["key"], fen=r["fen"], solution=r["solution"],
+                          solution_san=r["solution_san"], category=r["category"],
+                          played_san=r["played_san"], source=r["source"])
+                   for r in results]
+        if puzzles:
+            self.puzzlesReady.emit(puzzles)
 
     def _after_position_change(self, last_move: Optional[chess.Move], animate: bool):
         self._coach_alert = None   # any position change resolves a pending alert

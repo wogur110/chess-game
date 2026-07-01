@@ -20,7 +20,9 @@ from .engine_manager import EngineManager
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
 from .game_controller import GameController, PlayerKind
 from .opening_tab import OpeningStudyTab
+from .puzzle_store import PuzzleStore
 from .sidebar import CATEGORY_COLORS, EvalBar, Sidebar
+from .tactics_tab import TacticsTab
 
 
 def _default_save_dir() -> Path:
@@ -142,9 +144,13 @@ class MainWindow(QMainWindow):
         panel_layout.addWidget(sidebar_scroll)
         root.addWidget(panel)
 
+        self.play_page = play_page
         self.opening_tab = OpeningStudyTab()
+        self.puzzle_store = PuzzleStore()
+        self.tactics_tab = TacticsTab(self.puzzle_store)
         self.tabs.addTab(play_page, "♟  Play")
         self.tabs.addTab(self.opening_tab, "📖  Opening Study")
+        self.tabs.addTab(self.tactics_tab, "🧩  Tactics")
         self.opening_tab.continueRequested.connect(self._on_continue_from_opening)
 
         self._build_menu()
@@ -189,6 +195,7 @@ class MainWindow(QMainWindow):
         c.reviewProgress.connect(self.sidebar.set_review_progress)
         c.engineMissing.connect(self._on_engine_error)
         c.coachAlert.connect(self._on_coach_alert)
+        c.puzzlesReady.connect(self._on_puzzles_ready)
         self.coach_banner.takeBackClicked.connect(self._on_coach_take_back)
         self.coach_banner.showWhyClicked.connect(self._on_coach_show_why)
         self.coach_banner.playOnClicked.connect(self._on_coach_play_on)
@@ -234,9 +241,12 @@ class MainWindow(QMainWindow):
                                          self.opening_tab.step_back))
 
     def _route_shortcut(self, play_slot, opening_slot):
-        if self.tabs.currentWidget() is self.opening_tab:
+        current = self.tabs.currentWidget()
+        if current is self.opening_tab:
             if opening_slot is not None:
                 opening_slot()
+        elif current is self.tactics_tab:
+            pass   # the tactics tab has no history to navigate
         else:
             play_slot()
 
@@ -246,7 +256,7 @@ class MainWindow(QMainWindow):
         # Hold T to peek at the threats (a retrieval exercise: find them
         # yourself first, then check). Ignored while the toggle is on.
         if (event.key() == Qt.Key_T and not event.isAutoRepeat()
-                and self.tabs.currentWidget() is not self.opening_tab):
+                and self.tabs.currentWidget() is self.play_page):
             self._set_threats_peek(True)
             return
         super().keyPressEvent(event)
@@ -361,6 +371,16 @@ class MainWindow(QMainWindow):
         self._coach_alert = None
         self.coach_banner.hide_alert()
         self.board.set_coach_arrow(None)
+
+    # ---- Tactics deck ----
+
+    def _on_puzzles_ready(self, puzzles: list):
+        added = self.puzzle_store.add(puzzles)
+        if added:
+            self.tactics_tab.refresh()
+            self.statusBar().showMessage(
+                f"Added {added} puzzle{'s' if added != 1 else ''} from this "
+                "game's mistakes — retrain them in the Tactics tab", 8000)
 
     # ---- Sidebar events ----
 
