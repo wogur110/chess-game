@@ -152,6 +152,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.opening_tab, "📖  Opening Study")
         self.tabs.addTab(self.tactics_tab, "🧩  Tactics")
         self.opening_tab.continueRequested.connect(self._on_continue_from_opening)
+        self.tactics_tab.dueCountChanged.connect(self._on_due_count_changed)
+        self.tactics_tab.refresh()   # sync the "(N due)" badge at startup
 
         self._build_menu()
         self._connect_controller()
@@ -381,6 +383,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"Added {added} puzzle{'s' if added != 1 else ''} from this "
                 "game's mistakes — retrain them in the Tactics tab", 8000)
+
+    def _on_due_count_changed(self, due: int):
+        index = self.tabs.indexOf(self.tactics_tab)
+        if index >= 0:
+            label = f"🧩  Tactics ({due} due)" if due else "🧩  Tactics"
+            self.tabs.setTabText(index, label)
 
     # ---- Sidebar events ----
 

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget,
 from . import theme
 from .board_widget import BoardWidget
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
-from .puzzle_store import Puzzle, PuzzleStore
+from .puzzle_store import BOX_INTERVALS, Puzzle, PuzzleStore
 from .sidebar import CATEGORY_COLORS
 
 WRONG_FLASH_MS = 650
@@ -37,6 +37,8 @@ class _Hint:
 
 
 class TacticsTab(QWidget):
+    dueCountChanged = Signal(int)   # drives the "(N due)" tab badge
+
     def __init__(self, store: PuzzleStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.store = store
@@ -47,6 +49,9 @@ class TacticsTab(QWidget):
         self._used_hint = False
         self._finished = False
         self._generation = 0
+        self._session_queue: list = []      # keys still to review this session
+        self._session_total = 0
+        self._session_clean = 0
 
         root = QHBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
@@ -65,6 +70,13 @@ class TacticsTab(QWidget):
         title = QLabel("MY MISTAKES")
         title.setObjectName("SectionTitle")
         deck_layout.addWidget(title)
+        self.review_button = QPushButton("Review due")
+        self.review_button.setObjectName("PrimaryButton")
+        self.review_button.setToolTip(
+            "Work through every puzzle scheduled for today, oldest first "
+            "(spaced repetition: clean solves come back later, fails tomorrow)")
+        self.review_button.clicked.connect(self._start_session)
+        deck_layout.addWidget(self.review_button)
         self.deck_list = QListWidget()
         self.deck_list.itemClicked.connect(self._on_item_clicked)
         deck_layout.addWidget(self.deck_list, 1)
@@ -72,6 +84,13 @@ class TacticsTab(QWidget):
         self.deck_label.setObjectName("SubtleLabel")
         self.deck_label.setWordWrap(True)
         deck_layout.addWidget(self.deck_label)
+        self.boxes_label = QLabel("")
+        self.boxes_label.setObjectName("SubtleLabel")
+        self.boxes_label.setWordWrap(True)
+        self.boxes_label.setToolTip(
+            "Leitner boxes: how many puzzles sit at each review interval — "
+            "the further right, the better you know them")
+        deck_layout.addWidget(self.boxes_label)
         splitter.addWidget(deck_panel)
 
         # Center: board
@@ -150,13 +169,14 @@ class TacticsTab(QWidget):
     # ---- deck list ----
 
     def refresh(self):
-        """Rebuild the deck list (called after new puzzles are mined)."""
+        """Rebuild the deck list (after mining, solving or scheduling)."""
         current = self._puzzle.key if self._puzzle else None
         self.deck_list.blockSignals(True)
         self.deck_list.clear()
         puzzles = sorted(self.store.all(),
-                         key=lambda p: (p.solved, p.source.get("date", "")),
-                         )
+                         key=lambda p: (not p.is_due(), p.solved,
+                                        p.due or "0000-00-00",
+                                        p.source.get("date", "")))
         for puzzle in puzzles:
             symbol = MOVE_SYMBOLS.get(puzzle.category, "?")
             label = MOVE_LABELS.get(puzzle.category, puzzle.category)
@@ -164,8 +184,9 @@ class TacticsTab(QWidget):
             move_no = puzzle.source.get("move_no", "?")
             date = puzzle.source.get("date", "")
             mark = "✓ " if puzzle.solved else ""
+            when = "· due now" if puzzle.is_due() else f"· next {puzzle.due}"
             item = QListWidgetItem(
-                f"{mark}{label} {symbol} — {mover} move {move_no} · {date}")
+                f"{mark}{label} {symbol} — {mover} move {move_no} · {date} {when}")
             item.setData(Qt.UserRole, puzzle.key)
             item.setForeground(QColor(CATEGORY_COLORS.get(puzzle.category,
                                                           theme.TEXT)))
@@ -179,6 +200,15 @@ class TacticsTab(QWidget):
         self.deck_label.setText(
             f"{total} puzzle{'s' if total != 1 else ''} · {solved} solved · "
             f"{due} due for review")
+        counts = [0] * len(BOX_INTERVALS)
+        for puzzle in puzzles:
+            counts[max(0, min(puzzle.box, len(counts) - 1))] += 1
+        days = "/".join(str(d) for d in BOX_INTERVALS)
+        self.boxes_label.setText(
+            f"Boxes ({days} days): {' · '.join(str(c) for c in counts)}")
+        self.review_button.setText(f"Review due ({due})" if due else "Review due")
+        self.review_button.setEnabled(due > 0)
+        self.dueCountChanged.emit(due)
 
     def _set_idle_state(self):
         if self.store.all():
@@ -194,9 +224,53 @@ class TacticsTab(QWidget):
             button.setEnabled(False)
         self.next_button.setEnabled(bool(self.store.all()))
 
+    # ---- review session (spaced repetition) ----
+
+    def _start_session(self):
+        """Serve every puzzle due today, oldest first."""
+        due = self.store.due_puzzles()
+        if not due:
+            return
+        self._session_queue = [p.key for p in due]
+        self._session_total = len(due)
+        self._session_clean = 0
+        self._serve_next_due()
+
+    def _serve_next_due(self):
+        while self._session_queue:
+            puzzle = self.store.get(self._session_queue.pop(0))
+            if puzzle is not None:
+                self._start_puzzle(puzzle)
+                left = len(self._session_queue)
+                done = self._session_total - left
+                self.status_label.setText(
+                    f"[{done}/{self._session_total}] " +
+                    self.status_label.text())
+                self.next_button.setText(
+                    f"Next due ({left} left) →" if left else "Finish session →")
+                return
+        self._end_session()
+
+    def _end_session(self):
+        total = self._session_total
+        self._session_queue = []
+        self._session_total = 0
+        self.next_button.setText("Next puzzle →")
+        self.status_label.setText(
+            f"★ Review done — {self._session_clean}/{total} clean. "
+            "Failed cards come back tomorrow; clean ones moved up a box.")
+
+    @property
+    def _in_session(self) -> bool:
+        return self._session_total > 0
+
     # ---- solving ----
 
     def _on_item_clicked(self, item: QListWidgetItem):
+        # Picking a puzzle by hand leaves any running review session.
+        self._session_queue = []
+        self._session_total = 0
+        self.next_button.setText("Next puzzle →")
         puzzle = self.store.get(item.data(Qt.UserRole))
         if puzzle is not None:
             self._start_puzzle(puzzle)
@@ -283,6 +357,8 @@ class TacticsTab(QWidget):
         self.board_widget.set_movable_colors([])
         clean = solved and self._wrong == 0 and not self._used_hint
         self.store.record_attempt(puzzle.key, solved, clean)
+        if clean:
+            self._session_clean += 1 if self._in_session else 0
         if solved:
             self.status_label.setText(
                 "★ Solved — first try!" if clean else
@@ -314,7 +390,12 @@ class TacticsTab(QWidget):
         self._finish(solved=False)
 
     def _on_next(self):
-        """Jump to the first unsolved puzzle (other than the current one)."""
+        """Serve the session queue while reviewing, otherwise jump to the
+        first due/unsolved puzzle other than the current one."""
+        if self._in_session:
+            self._serve_next_due()
+            self.refresh()
+            return
         current = self._puzzle.key if self._puzzle else None
         candidates = [p for p in self.store.due_puzzles()
                       if p.key != current] or \

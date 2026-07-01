@@ -66,6 +66,10 @@ the move you're viewing.
   sound best move) and becomes a puzzle: re-solve the exact position you
   misplayed, with the wrong try flashed back, hints on demand and the origin
   of each card shown ("Blunder from your game …, move 23")
+- **Spaced repetition (Leitner boxes)** — every puzzle is scheduled at
+  1/3/7/21/60-day intervals: a clean first-try solve moves it up a box, a
+  fail sends it back to tomorrow. The tab title shows a "(N due)" badge and
+  **Review due** works through today's queue with a session summary
 - **Adjustable AI difficulty** — 10 slider levels, from beginner (~800 Elo) to
   full strength (3200+); White and Black AI can be set to different levels for
   engine-vs-engine matchups
@@ -163,6 +167,7 @@ the whole `dist\ChessStudio` folder (Stockfish included, works offline).
 | Play a suggested move | Click its row in the sidebar |
 | Review the whole game | "Analyze game" in the sidebar (accuracy + annotations) |
 | Retry a mistake | "⟲ Replay from here" under the move detail (after analyzing) |
+| Retrain your mistakes | Tactics tab → "Review due" (or pick any puzzle) |
 | Jump to a move from the graph | Click the eval graph in the sidebar |
 | Study openings | Opening Study tab → pick an opening on the left |
 | Step through an opening demo | ▶ button or `→` (clicking a book-move row also works) |
