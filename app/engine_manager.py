@@ -52,7 +52,7 @@ DIFFICULTY_LEVELS: dict[int, DifficultyLevel] = {
     10: DifficultyLevel("Maximum · 3200+", {"UCI_LimitStrength": False, "Skill Level": 20}, 1.60),
 }
 
-DEFAULT_DIFFICULTY = 5
+DEFAULT_DIFFICULTY = 7
 ANALYSIS_LIMIT = chess.engine.Limit(depth=22, time=0.9)
 # Shorter per-position budget for whole-game review (dozens of positions).
 FULL_ANALYSIS_LIMIT = chess.engine.Limit(depth=16, time=0.25)
