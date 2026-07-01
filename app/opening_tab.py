@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel,
 
 from . import theme
 from .board_widget import BoardWidget
+from .i18n import tr
 from .opening_book import BookMove, OpeningBook, OpeningLine, load_book
 
 DRAW_COLOR = "#8b95a5"
@@ -60,7 +61,7 @@ class TriBar(QWidget):
         if self._values is None:
             painter.fillRect(rect, QColor(theme.BG_PANEL_LIGHT))
             painter.setPen(QColor(theme.TEXT_DIM))
-            painter.drawText(rect, Qt.AlignCenter, "no data")
+            painter.drawText(rect, Qt.AlignCenter, tr("no data"))
             painter.end()
             return
         white, draws, black = self._values
@@ -131,7 +132,8 @@ class BookMovesPanel(QWidget):
         width = self.width()
         if not self._moves:
             painter.setPen(QColor(theme.TEXT_DIM))
-            painter.drawText(self.rect(), Qt.AlignCenter, "Out of book — no known moves")
+            painter.drawText(self.rect(), Qt.AlignCenter,
+                             tr("Out of book — no known moves"))
             painter.end()
             return
         font = QFont(self.font())
@@ -182,7 +184,7 @@ class BookMovesPanel(QWidget):
             else:
                 painter.fillRect(bar, QColor(theme.BG_PANEL_LIGHT))
                 painter.setPen(QColor(theme.TEXT_DIM))
-                painter.drawText(bar, Qt.AlignCenter, "book line")
+                painter.drawText(bar, Qt.AlignCenter, tr("book line"))
             painter.setClipping(False)
         painter.end()
 
@@ -199,7 +201,7 @@ class OpeningBrowser(QWidget):
         layout.setSpacing(8)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search openings…  (e.g. Sicilian)")
+        self.search.setPlaceholderText(tr("Search openings…  (e.g. Sicilian)"))
         self.search.setClearButtonEnabled(True)
         layout.addWidget(self.search)
 
@@ -278,7 +280,7 @@ class OpeningStudyTab(QWidget):
         browser_layout = QVBoxLayout(browser_panel)
         browser_layout.setContentsMargins(0, 0, 0, 0)
         browser_layout.setSpacing(8)
-        title = QLabel("OPENINGS")
+        title = QLabel(tr("OPENINGS"))
         title.setObjectName("SectionTitle")
         browser_layout.addWidget(title)
         self.browser = OpeningBrowser(self.book)
@@ -312,7 +314,7 @@ class OpeningStudyTab(QWidget):
         side.setContentsMargins(16, 14, 16, 14)
         side.setSpacing(9)
 
-        self.name_label = QLabel("Starting position")
+        self.name_label = QLabel(tr("Starting position"))
         self.name_label.setObjectName("StatusLabel")
         self.name_label.setWordWrap(True)
         side.addWidget(self.name_label)
@@ -322,9 +324,9 @@ class OpeningStudyTab(QWidget):
         self.line_label.setWordWrap(True)
         side.addWidget(self.line_label)
 
-        stats_title = QLabel("MASTERS RESULTS  ·  W / D / B")
+        stats_title = QLabel(tr("MASTERS RESULTS  ·  W / D / B"))
         stats_title.setObjectName("SectionTitle")
-        stats_title.setToolTip("White wins / draws / Black wins")
+        stats_title.setToolTip(tr("White wins / draws / Black wins"))
         side.addWidget(stats_title)
         self.tri_bar = TriBar()
         side.addWidget(self.tri_bar)
@@ -332,7 +334,7 @@ class OpeningStudyTab(QWidget):
         self.games_label.setObjectName("SubtleLabel")
         side.addWidget(self.games_label)
 
-        moves_title = QLabel("BOOK MOVES")
+        moves_title = QLabel(tr("BOOK MOVES"))
         moves_title.setObjectName("SectionTitle")
         side.addWidget(moves_title)
         self.moves_panel = BookMovesPanel()
@@ -349,10 +351,10 @@ class OpeningStudyTab(QWidget):
         nav_row = QHBoxLayout()
         nav_row.setSpacing(6)
         self.nav_buttons = {}
-        for key, text, tip in (("start", "⏮", "Line start"),
-                               ("back", "◀", "Back (←)"),
-                               ("fwd", "▶", "Next line move (→)"),
-                               ("end", "⏭", "Line end")):
+        for key, text, tip in (("start", "⏮", tr("Line start")),
+                               ("back", "◀", tr("Back (←)")),
+                               ("fwd", "▶", tr("Next line move (→)")),
+                               ("end", "⏭", tr("Line end"))):
             button = QToolButton()
             button.setText(text)
             button.setToolTip(tip)
@@ -362,8 +364,8 @@ class OpeningStudyTab(QWidget):
             nav_row.addWidget(button)
         nav_row.addStretch(1)
         self.back_button = QToolButton()
-        self.back_button.setText("↩ Back")
-        self.back_button.setToolTip("Take back the last move")
+        self.back_button.setText(tr("↩ Back"))
+        self.back_button.setToolTip(tr("Take back the last move"))
         self.back_button.clicked.connect(self.step_back)
         nav_row.addWidget(self.back_button)
         side.addLayout(nav_row)
@@ -371,30 +373,32 @@ class OpeningStudyTab(QWidget):
         # Drill controls
         drill_row = QHBoxLayout()
         drill_row.setSpacing(8)
-        drill_label = QLabel("Drill as")
+        drill_label = QLabel(tr("Drill as"))
         drill_row.addWidget(drill_label)
         self.side_combo = QComboBox()
-        self.side_combo.addItems(["White", "Black"])
+        self.side_combo.addItems([tr("White"), tr("Black")])
         drill_row.addWidget(self.side_combo)
-        self.drill_button = QPushButton("Start drill")
+        self.drill_button = QPushButton(tr("Start drill"))
         self.drill_button.setObjectName("PrimaryButton")
         self.drill_button.clicked.connect(self._toggle_drill)
         drill_row.addWidget(self.drill_button, 1)
         side.addLayout(drill_row)
 
-        self.feedback_label = QLabel("Pick an opening on the left, or just move pieces.")
+        self.feedback_label = QLabel(
+            tr("Pick an opening on the left, or just move pieces."))
         self.feedback_label.setObjectName("SubtleLabel")
         self.feedback_label.setWordWrap(True)
         side.addWidget(self.feedback_label)
 
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(8)
-        self.reset_button = QPushButton("Reset board")
+        self.reset_button = QPushButton(tr("Reset board"))
         self.reset_button.clicked.connect(self.reset_board)
         bottom_row.addWidget(self.reset_button)
-        self.continue_button = QPushButton("Continue vs AI →")
-        self.continue_button.setToolTip(
-            "Take this position into the Play tab and finish the game against Stockfish")
+        self.continue_button = QPushButton(tr("Continue vs AI →"))
+        self.continue_button.setToolTip(tr(
+            "Take this position into the Play tab and finish the game "
+            "against Stockfish"))
         self.continue_button.clicked.connect(self._continue_vs_ai)
         bottom_row.addWidget(self.continue_button)
         side.addLayout(bottom_row)
@@ -411,9 +415,9 @@ class OpeningStudyTab(QWidget):
         self.browser.lineSelected.connect(self._on_line_selected)
 
         if self.book is None:
-            self.name_label.setText("Opening data not found")
-            self.feedback_label.setText(
-                "app/data/openings.json.gz is missing — run tools/build_opening_data.py.")
+            self.name_label.setText(tr("Opening data not found"))
+            self.feedback_label.setText(tr(
+                "app/data/openings.json.gz is missing — run tools/build_opening_data.py."))
         self._refresh(animate=False)
 
     # ---- helpers ----
@@ -449,19 +453,21 @@ class OpeningStudyTab(QWidget):
             eco, name = named
             in_book = self.book.name_for_epd(self._epds[-1]) is not None or \
                 (info is not None and info.moves)
-            suffix = "" if in_book else "  ·  out of book"
+            suffix = "" if in_book else tr("  ·  out of book")
             self.name_label.setText(f"{eco} — {name}{suffix}")
         else:
-            self.name_label.setText("Starting position" if not self._history else "Unnamed position")
+            self.name_label.setText(tr("Starting position") if not self._history
+                                    else tr("Unnamed position"))
 
         self.line_label.setText(self._san_breadcrumb())
 
         if info is not None and info.total > 0:
             self.tri_bar.set_values(info.white, info.draws, info.black)
-            self.games_label.setText(f"{info.total:,} master games from this position")
+            self.games_label.setText(tr("{total} master games from this position",
+                                        total=f"{info.total:,}"))
         else:
             self.tri_bar.set_values(0, 0, 0)
-            self.games_label.setText("No master-game statistics here")
+            self.games_label.setText(tr("No master-game statistics here"))
 
         moves = info.moves if info is not None else []
         self.moves_panel.set_moves(moves)
@@ -513,7 +519,8 @@ class OpeningStudyTab(QWidget):
         self._history = []
         self._epds = [self._board.epd()]
         self.feedback_label.setText(
-            f"Demo: {line.name} — step through with ▶, or start a drill.")
+            tr("Demo: {name} — step through with ▶, or start a drill.",
+               name=line.name))
         self._refresh(animate=False)
 
     def _nav(self, key: str):
@@ -600,18 +607,18 @@ class OpeningStudyTab(QWidget):
         self._board = chess.Board()
         self._history = []
         self._epds = [self._board.epd()]
-        self.drill_button.setText("Stop drill")
-        side_name = "White" if self._drill_side == chess.WHITE else "Black"
+        self.drill_button.setText(tr("Stop drill"))
+        side_name = tr("White") if self._drill_side == chess.WHITE else tr("Black")
         self.board_widget.set_orientation(self._drill_side)
         self.board_widget.set_movable_colors([self._drill_side])
         if self._drill_line is not None:
             self.feedback_label.setText(
-                f"Drill: {self._drill_line.name} — you play {side_name}, "
-                "exactly along the line.")
+                tr("Drill: {name} — you play {side}, exactly along the line.",
+                   name=self._drill_line.name, side=side_name))
         else:
             self.feedback_label.setText(
-                f"Drill: you play {side_name}. Any book move counts; the opponent "
-                "follows master-game popularity.")
+                tr("Drill: you play {side}. Any book move counts; the opponent "
+                   "follows master-game popularity.", side=side_name))
         self._refresh(animate=False)
         if self._board.turn != self._drill_side:
             self._schedule_reply()
@@ -622,10 +629,10 @@ class OpeningStudyTab(QWidget):
         self._bump()
         self._mode = Mode.EXPLORE
         self._drill_line = None
-        self.drill_button.setText("Start drill")
+        self.drill_button.setText(tr("Start drill"))
         self.board_widget.set_movable_colors([chess.WHITE, chess.BLACK])
         if not silent:
-            self.feedback_label.setText("Drill stopped — free exploration.")
+            self.feedback_label.setText(tr("Drill stopped — free exploration."))
             self._refresh()
 
     def _expected_line_move(self) -> Optional[str]:
@@ -656,9 +663,9 @@ class OpeningStudyTab(QWidget):
                 self.board_widget.set_suggestions(
                     [_Hint(chess.Move.from_uci(expected), share)])
                 self.feedback_label.setText(
-                    f"✗ {self._board.san(move)} is not the line move — "
-                    f"the arrow shows it ({self._drill_mistakes} miss"
-                    f"{'es' if self._drill_mistakes != 1 else ''}).")
+                    tr("✗ {san} is not the line move — the arrow shows it "
+                       "(misses: {misses}).",
+                       san=self._board.san(move), misses=self._drill_mistakes))
             return
 
         replies = self.book.book_replies(self._board) if self.book else []
@@ -682,9 +689,9 @@ class OpeningStudyTab(QWidget):
                 hints.append(_Hint(chess.Move.from_uci(m.uci), share))
             self.board_widget.set_suggestions(hints)
             self.feedback_label.setText(
-                f"✗ {self._board.san(move)} is not a book move here — "
-                f"try one of the arrows ({self._drill_mistakes} miss"
-                f"{'es' if self._drill_mistakes != 1 else ''}).")
+                tr("✗ {san} is not a book move here — try one of the arrows "
+                   "(misses: {misses}).",
+                   san=self._board.san(move), misses=self._drill_mistakes))
 
     def _masters_share(self, uci: str) -> float:
         """How often masters chose `uci` here (for the hint badge)."""
@@ -699,10 +706,10 @@ class OpeningStudyTab(QWidget):
     def _drill_clear_hints(self):
         self.board_widget.set_suggestions([])
         if self._drill_mistakes == 0:
-            self.feedback_label.setText("✓ Book move!")
+            self.feedback_label.setText(tr("✓ Book move!"))
         else:
-            self.feedback_label.setText("✓ Book move!  (misses so far: "
-                                        f"{self._drill_mistakes})")
+            self.feedback_label.setText(tr("✓ Book move!  (misses so far: {misses})",
+                                           misses=self._drill_mistakes))
 
     def _schedule_reply(self):
         generation = self._generation
@@ -741,11 +748,11 @@ class OpeningStudyTab(QWidget):
             name = line.name
         else:
             named = self.book.name_for_history(self._epds) if self.book else None
-            name = f"{named[0]} {named[1]}" if named else "this line"
+            name = f"{named[0]} {named[1]}" if named else tr("Unnamed position")
         self.feedback_label.setText(
-            f"★ Line complete after {ply} plies — {name}, "
-            f"{misses} miss{'es' if misses != 1 else ''}. "
-            "Continue against the AI to finish the game!")
+            tr("★ Line complete after {ply} plies — {name}, misses: {misses}. "
+               "Continue against the AI to finish the game!",
+               ply=ply, name=name, misses=misses))
         self._refresh()
 
     # ---- shared actions ----
@@ -760,7 +767,8 @@ class OpeningStudyTab(QWidget):
         self._history = []
         self._epds = [self._board.epd()]
         self.board_widget.set_movable_colors([chess.WHITE, chess.BLACK])
-        self.feedback_label.setText("Board reset — pick an opening or explore freely.")
+        self.feedback_label.setText(
+            tr("Board reset — pick an opening or explore freely."))
         self._refresh(animate=False)
 
     def _continue_vs_ai(self):

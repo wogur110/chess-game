@@ -9,7 +9,7 @@ from pathlib import Path
 
 import chess
 from PySide6.QtCore import QByteArray, QSettings, Qt, Signal
-from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel,
                                QMainWindow, QMessageBox, QPushButton,
                                QScrollArea, QTabWidget, QVBoxLayout, QWidget)
@@ -18,6 +18,7 @@ from . import APP_NAME, theme
 from .board_widget import BoardWidget, sprites
 from .engine_manager import EngineManager
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
+from .i18n import LANGUAGES, current_language, tr
 from .game_controller import GameController, PlayerKind
 from .opening_tab import OpeningStudyTab
 from .puzzle_store import PuzzleStore
@@ -59,10 +60,10 @@ class CoachBanner(QFrame):
         self.label = QLabel("")
         self.label.setWordWrap(True)
         layout.addWidget(self.label, 1)
-        self.take_back_button = QPushButton("↩ Take back")
+        self.take_back_button = QPushButton(tr("↩ Take back"))
         self.take_back_button.setObjectName("PrimaryButton")
-        self.why_button = QPushButton("Show why")
-        self.play_on_button = QPushButton("Keep move")
+        self.why_button = QPushButton(tr("Show why"))
+        self.play_on_button = QPushButton(tr("Keep move"))
         for button, signal in ((self.take_back_button, self.takeBackClicked),
                                (self.why_button, self.showWhyClicked),
                                (self.play_on_button, self.playOnClicked)):
@@ -70,12 +71,15 @@ class CoachBanner(QFrame):
             layout.addWidget(button)
 
     def show_alert(self, alert):
-        label = MOVE_LABELS.get(alert.category, "Mistake")
+        label = tr(MOVE_LABELS.get(alert.category, "Mistake"))
         symbol = MOVE_SYMBOLS.get(alert.category, "?")
-        text = (f"<b>{label} {symbol}</b> — your win chance fell "
-                f"{alert.before_exp * 100:.0f}% → {alert.after_exp * 100:.0f}%.")
+        text = tr("{label} {symbol} — your win chance fell "
+                  "{before}% → {after}%.",
+                  label=f"<b>{label}", symbol=f"{symbol}</b>",
+                  before=f"{alert.before_exp * 100:.0f}",
+                  after=f"{alert.after_exp * 100:.0f}")
         if alert.best_san:
-            text += f"  Best was <b>{alert.best_san}</b>."
+            text += "  " + tr("Best was {san}.", san=f"<b>{alert.best_san}</b>")
         self.label.setText(text)
         color = CATEGORY_COLORS.get(alert.category, theme.BAD)
         self.setStyleSheet(
@@ -87,7 +91,8 @@ class CoachBanner(QFrame):
     def reveal_refutation(self, pv_san: list):
         if pv_san:
             line = " ".join(pv_san[:4])
-            self.label.setText(self.label.text() + f"  Punished by: <b>{line}</b>")
+            self.label.setText(self.label.text() + "  " +
+                               tr("Punished by: {line}", line=f"<b>{line}</b>"))
         self.why_button.setEnabled(False)
 
     def hide_alert(self):
@@ -148,9 +153,9 @@ class MainWindow(QMainWindow):
         self.opening_tab = OpeningStudyTab()
         self.puzzle_store = PuzzleStore()
         self.tactics_tab = TacticsTab(self.puzzle_store)
-        self.tabs.addTab(play_page, "♟  Play")
-        self.tabs.addTab(self.opening_tab, "📖  Opening Study")
-        self.tabs.addTab(self.tactics_tab, "🧩  Tactics")
+        self.tabs.addTab(play_page, tr("♟  Play"))
+        self.tabs.addTab(self.opening_tab, tr("📖  Opening Study"))
+        self.tabs.addTab(self.tactics_tab, tr("🧩  Tactics"))
         self.opening_tab.continueRequested.connect(self._on_continue_from_opening)
         self.tactics_tab.dueCountChanged.connect(self._on_due_count_changed)
         self.tactics_tab.refresh()   # sync the "(N due)" badge at startup
@@ -167,21 +172,45 @@ class MainWindow(QMainWindow):
     # ---- Setup ----
 
     def _build_menu(self):
-        file_menu = self.menuBar().addMenu("&File")
+        file_menu = self.menuBar().addMenu(tr("&File"))
         for text, shortcut, slot in (
-            ("&New game", QKeySequence.New, self._new_game),
-            ("&Save game…", QKeySequence.Save, self._save_game),
-            ("&Open game…", QKeySequence.Open, self._load_game),
+            (tr("&New game"), QKeySequence.New, self._new_game),
+            (tr("&Save game…"), QKeySequence.Save, self._save_game),
+            (tr("&Open game…"), QKeySequence.Open, self._load_game),
         ):
             action = QAction(text, self)
             action.setShortcut(shortcut)
             action.triggered.connect(slot)
             file_menu.addAction(action)
         file_menu.addSeparator()
-        quit_action = QAction("E&xit", self)
+        quit_action = QAction(tr("E&xit"), self)
         quit_action.setShortcut(QKeySequence.Quit)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+
+        options_menu = self.menuBar().addMenu(tr("&Options"))
+        language_menu = options_menu.addMenu(tr("Language / 언어"))
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for code, name in LANGUAGES.items():
+            action = QAction(name, self)
+            action.setCheckable(True)
+            action.setChecked(code == current_language())
+            action.triggered.connect(
+                lambda _=False, c=code: self._on_language_selected(c))
+            group.addAction(action)
+            language_menu.addAction(action)
+
+    def _on_language_selected(self, code: str):
+        if code == current_language():
+            return
+        QSettings().setValue("language", code)
+        # Widgets are built once at startup, so the switch applies next launch;
+        # tell the user in both languages so the note is always readable.
+        QMessageBox.information(
+            self, APP_NAME,
+            "Restart Chess Studio to apply the language change.\n"
+            "언어 변경은 Chess Studio를 다시 시작하면 적용됩니다.")
 
     def _connect_controller(self):
         c = self.controller
@@ -381,13 +410,14 @@ class MainWindow(QMainWindow):
         if added:
             self.tactics_tab.refresh()
             self.statusBar().showMessage(
-                f"Added {added} puzzle{'s' if added != 1 else ''} from this "
-                "game's mistakes — retrain them in the Tactics tab", 8000)
+                tr("Added {added} puzzle(s) from this game's mistakes — "
+                   "retrain them in the Tactics tab", added=added), 8000)
 
     def _on_due_count_changed(self, due: int):
         index = self.tabs.indexOf(self.tactics_tab)
         if index >= 0:
-            label = f"🧩  Tactics ({due} due)" if due else "🧩  Tactics"
+            label = (tr("🧩  Tactics ({due} due)", due=due) if due
+                     else tr("🧩  Tactics"))
             self.tabs.setTabText(index, label)
 
     # ---- Sidebar events ----
@@ -425,7 +455,7 @@ class MainWindow(QMainWindow):
         self._apply_orientation()
         self.tabs.setCurrentIndex(0)
         self.statusBar().showMessage(
-            "Continuing from the opening — good luck!", 5000)
+            tr("Continuing from the opening — good luck!"), 5000)
 
     def _on_replay_from(self, view_index: int):
         """Rewind to just before the mistake at `view_index` and play it out
@@ -442,12 +472,12 @@ class MainWindow(QMainWindow):
         note = ""
         try:
             c.save_pgn(str(backup))
-            note = f" (game backed up to {backup.name})"
+            note = tr(" (game backed up to {name})", name=backup.name)
         except OSError:
             answer = QMessageBox.question(
                 self, APP_NAME,
-                "Could not back up the current game. Replay anyway? "
-                "The rest of the line will be discarded.",
+                tr("Could not back up the current game. Replay anyway? "
+                   "The rest of the line will be discarded."),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if answer != QMessageBox.Yes:
                 return
@@ -456,7 +486,8 @@ class MainWindow(QMainWindow):
         self._apply_orientation()
         self.tabs.setCurrentIndex(0)
         self.statusBar().showMessage(
-            f"Replaying from before {san} — find a better move!{note}", 8000)
+            tr("Replaying from before {san} — find a better move!{note}",
+               san=san, note=note), 8000)
 
     def _apply_orientation(self):
         if not self._auto_orient:
@@ -471,8 +502,8 @@ class MainWindow(QMainWindow):
         if self.controller.total_moves > 0:
             answer = QMessageBox.question(
                 self, APP_NAME,
-                "Start a new game? The current game will be discarded "
-                "unless you have saved it.",
+                tr("Start a new game? The current game will be discarded "
+                   "unless you have saved it."),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
             if answer != QMessageBox.Yes:
                 return
@@ -482,7 +513,8 @@ class MainWindow(QMainWindow):
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         suggested = str(_default_save_dir() / f"game_{stamp}.pgn")
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save game", suggested, "PGN files (*.pgn);;All files (*)")
+            self, tr("Save game"), suggested,
+            tr("PGN files (*.pgn);;All files (*)"))
         if not path:
             return
         if not os.path.splitext(path)[1]:
@@ -490,23 +522,26 @@ class MainWindow(QMainWindow):
         try:
             self.controller.save_pgn(path)
         except OSError as exc:
-            QMessageBox.critical(self, APP_NAME, f"Could not save the game:\n{exc}")
+            QMessageBox.critical(self, APP_NAME,
+                                 tr("Could not save the game:\n{error}", error=exc))
             return
-        self.statusBar().showMessage(f"Saved to {path}", 5000)
+        self.statusBar().showMessage(tr("Saved to {path}", path=path), 5000)
 
     def _load_game(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open game", str(_default_save_dir()),
-            "PGN files (*.pgn);;All files (*)")
+            self, tr("Open game"), str(_default_save_dir()),
+            tr("PGN files (*.pgn);;All files (*)"))
         if not path:
             return
         try:
             count = self.controller.load_pgn(path)
         except Exception as exc:
-            QMessageBox.critical(self, APP_NAME, f"Could not load the game:\n{exc}")
+            QMessageBox.critical(self, APP_NAME,
+                                 tr("Could not load the game:\n{error}", error=exc))
             return
         self.statusBar().showMessage(
-            f"Loaded {Path(path).name} — {count} moves. Use ◀ ▶ to replay.", 8000)
+            tr("Loaded {name} — {count} moves. Use ◀ ▶ to replay.",
+               name=Path(path).name, count=count), 8000)
 
     # ---- Settings persistence ----
 

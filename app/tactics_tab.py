@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget,
 from . import theme
 from .board_widget import BoardWidget
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
+from .i18n import tr
 from .puzzle_store import BOX_INTERVALS, Puzzle, PuzzleStore
 from .sidebar import CATEGORY_COLORS
 
@@ -67,14 +68,14 @@ class TacticsTab(QWidget):
         deck_layout = QVBoxLayout(deck_panel)
         deck_layout.setContentsMargins(0, 0, 0, 0)
         deck_layout.setSpacing(8)
-        title = QLabel("MY MISTAKES")
+        title = QLabel(tr("MY MISTAKES"))
         title.setObjectName("SectionTitle")
         deck_layout.addWidget(title)
-        self.review_button = QPushButton("Review due")
+        self.review_button = QPushButton(tr("Review due"))
         self.review_button.setObjectName("PrimaryButton")
-        self.review_button.setToolTip(
+        self.review_button.setToolTip(tr(
             "Work through every puzzle scheduled for today, oldest first "
-            "(spaced repetition: clean solves come back later, fails tomorrow)")
+            "(spaced repetition: clean solves come back later, fails tomorrow)"))
         self.review_button.clicked.connect(self._start_session)
         deck_layout.addWidget(self.review_button)
         self.deck_list = QListWidget()
@@ -87,9 +88,9 @@ class TacticsTab(QWidget):
         self.boxes_label = QLabel("")
         self.boxes_label.setObjectName("SubtleLabel")
         self.boxes_label.setWordWrap(True)
-        self.boxes_label.setToolTip(
+        self.boxes_label.setToolTip(tr(
             "Leitner boxes: how many puzzles sit at each review interval — "
-            "the further right, the better you know them")
+            "the further right, the better you know them"))
         deck_layout.addWidget(self.boxes_label)
         splitter.addWidget(deck_panel)
 
@@ -137,22 +138,22 @@ class TacticsTab(QWidget):
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
-        self.hint_button = QPushButton("Hint")
-        self.hint_button.setToolTip("Show the next move of the solution "
-                                    "(the attempt no longer counts as clean)")
+        self.hint_button = QPushButton(tr("Hint"))
+        self.hint_button.setToolTip(tr("Show the next move of the solution "
+                                       "(the attempt no longer counts as clean)"))
         self.hint_button.clicked.connect(self._on_hint)
         buttons.addWidget(self.hint_button)
-        self.solution_button = QPushButton("Show solution")
+        self.solution_button = QPushButton(tr("Show solution"))
         self.solution_button.clicked.connect(self._on_show_solution)
         buttons.addWidget(self.solution_button)
         side.addLayout(buttons)
 
-        self.next_button = QPushButton("Next puzzle →")
+        self.next_button = QPushButton(tr("Next puzzle →"))
         self.next_button.setObjectName("PrimaryButton")
         self.next_button.clicked.connect(self._on_next)
         side.addWidget(self.next_button)
 
-        self.remove_button = QPushButton("Remove this puzzle")
+        self.remove_button = QPushButton(tr("Remove this puzzle"))
         self.remove_button.clicked.connect(self._on_remove)
         side.addWidget(self.remove_button)
         side.addStretch(1)
@@ -179,14 +180,16 @@ class TacticsTab(QWidget):
                                         p.source.get("date", "")))
         for puzzle in puzzles:
             symbol = MOVE_SYMBOLS.get(puzzle.category, "?")
-            label = MOVE_LABELS.get(puzzle.category, puzzle.category)
-            mover = puzzle.source.get("mover", "?")
+            label = tr(MOVE_LABELS.get(puzzle.category, puzzle.category))
+            mover = tr(puzzle.source.get("mover", "?"))
             move_no = puzzle.source.get("move_no", "?")
             date = puzzle.source.get("date", "")
             mark = "✓ " if puzzle.solved else ""
-            when = "· due now" if puzzle.is_due() else f"· next {puzzle.due}"
+            when = (tr("· due now") if puzzle.is_due()
+                    else tr("· next {due}", due=puzzle.due))
+            where = tr("{mover} move {move_no}", mover=mover, move_no=move_no)
             item = QListWidgetItem(
-                f"{mark}{label} {symbol} — {mover} move {move_no} · {date} {when}")
+                f"{mark}{label} {symbol} — {where} · {date} {when}")
             item.setData(Qt.UserRole, puzzle.key)
             item.setForeground(QColor(CATEGORY_COLORS.get(puzzle.category,
                                                           theme.TEXT)))
@@ -198,27 +201,29 @@ class TacticsTab(QWidget):
         solved = sum(1 for p in puzzles if p.solved)
         due = len(self.store.due_puzzles())
         self.deck_label.setText(
-            f"{total} puzzle{'s' if total != 1 else ''} · {solved} solved · "
-            f"{due} due for review")
+            tr("{total} puzzle(s) · {solved} solved · {due} due for review",
+               total=total, solved=solved, due=due))
         counts = [0] * len(BOX_INTERVALS)
         for puzzle in puzzles:
             counts[max(0, min(puzzle.box, len(counts) - 1))] += 1
         days = "/".join(str(d) for d in BOX_INTERVALS)
         self.boxes_label.setText(
-            f"Boxes ({days} days): {' · '.join(str(c) for c in counts)}")
-        self.review_button.setText(f"Review due ({due})" if due else "Review due")
+            tr("Boxes ({days} days): {counts}", days=days,
+               counts=" · ".join(str(c) for c in counts)))
+        self.review_button.setText(tr("Review due ({due})", due=due) if due
+                                   else tr("Review due"))
         self.review_button.setEnabled(due > 0)
         self.dueCountChanged.emit(due)
 
     def _set_idle_state(self):
         if self.store.all():
-            self.status_label.setText("Pick a puzzle on the left.")
+            self.status_label.setText(tr("Pick a puzzle on the left."))
         else:
-            self.status_label.setText("No puzzles yet.")
-            self.origin_label.setText(
+            self.status_label.setText(tr("No puzzles yet."))
+            self.origin_label.setText(tr(
                 "Play a game and run “Analyze game” — every mistake with a "
                 "clear best answer becomes a puzzle here, so you retrain on "
-                "exactly the positions you misplayed.")
+                "exactly the positions you misplayed."))
         for button in (self.hint_button, self.solution_button,
                        self.remove_button):
             button.setEnabled(False)
@@ -247,7 +252,8 @@ class TacticsTab(QWidget):
                     f"[{done}/{self._session_total}] " +
                     self.status_label.text())
                 self.next_button.setText(
-                    f"Next due ({left} left) →" if left else "Finish session →")
+                    tr("Next due ({left} left) →", left=left) if left
+                    else tr("Finish session →"))
                 return
         self._end_session()
 
@@ -255,10 +261,11 @@ class TacticsTab(QWidget):
         total = self._session_total
         self._session_queue = []
         self._session_total = 0
-        self.next_button.setText("Next puzzle →")
+        self.next_button.setText(tr("Next puzzle →"))
         self.status_label.setText(
-            f"★ Review done — {self._session_clean}/{total} clean. "
-            "Failed cards come back tomorrow; clean ones moved up a box.")
+            tr("★ Review done — {clean}/{total} clean. Failed cards come back "
+               "tomorrow; clean ones moved up a box.",
+               clean=self._session_clean, total=total))
 
     @property
     def _in_session(self) -> bool:
@@ -270,7 +277,7 @@ class TacticsTab(QWidget):
         # Picking a puzzle by hand leaves any running review session.
         self._session_queue = []
         self._session_total = 0
-        self.next_button.setText("Next puzzle →")
+        self.next_button.setText(tr("Next puzzle →"))
         puzzle = self.store.get(item.data(Qt.UserRole))
         if puzzle is not None:
             self._start_puzzle(puzzle)
@@ -288,15 +295,19 @@ class TacticsTab(QWidget):
         self.board_widget.set_orientation(solver)
         self.board_widget.set_movable_colors([solver])
         self.board_widget.set_suggestions([])
-        side_name = "White" if solver == chess.WHITE else "Black"
+        side_name = tr("White") if solver == chess.WHITE else tr("Black")
         symbol = MOVE_SYMBOLS.get(puzzle.category, "?")
-        label = MOVE_LABELS.get(puzzle.category, puzzle.category)
-        self.status_label.setText(f"{side_name} to move — find the best move.")
+        label = tr(MOVE_LABELS.get(puzzle.category, puzzle.category))
+        self.status_label.setText(
+            tr("{side} to move — find the best move.", side=side_name))
         source = puzzle.source
         self.origin_label.setText(
-            f"{label} {symbol} from your game {source.get('white', '?')} vs "
-            f"{source.get('black', '?')} ({source.get('date', '?')}), move "
-            f"{source.get('move_no', '?')} — you played {puzzle.played_san}.")
+            tr("{label} {symbol} from your game {white} vs {black} ({date}), "
+               "move {move_no} — you played {played}.",
+               label=label, symbol=symbol,
+               white=source.get("white", "?"), black=source.get("black", "?"),
+               date=source.get("date", "?"),
+               move_no=source.get("move_no", "?"), played=puzzle.played_san))
         self.solution_label.setVisible(False)
         for button in (self.hint_button, self.solution_button,
                        self.remove_button):
@@ -321,7 +332,7 @@ class TacticsTab(QWidget):
         if self._step >= len(self._puzzle.solution):
             self._finish(solved=True)
             return
-        self.status_label.setText("✓ Correct — the reply is coming…")
+        self.status_label.setText(tr("✓ Correct — the reply is coming…"))
         generation = self._generation
         QTimer.singleShot(REPLY_DELAY_MS, lambda: self._play_reply(generation))
 
@@ -332,7 +343,7 @@ class TacticsTab(QWidget):
         self._board.push(move)
         self._step += 1
         self.board_widget.set_position(self._board, move, animate=True)
-        self.status_label.setText("Your move — continue the line.")
+        self.status_label.setText(tr("Your move — continue the line."))
 
     def _reject_move(self, move: chess.Move):
         self._wrong += 1
@@ -340,7 +351,7 @@ class TacticsTab(QWidget):
         # Show the wrong move briefly, then rewind it.
         self._board.push(move)
         self.board_widget.set_position(self._board, move, animate=False)
-        self.status_label.setText(f"✗ {san} isn’t it — try again.")
+        self.status_label.setText(tr("✗ {san} isn’t it — try again.", san=san))
         generation = self._generation
         QTimer.singleShot(WRONG_FLASH_MS, lambda: self._revert_wrong(generation))
 
@@ -360,13 +371,16 @@ class TacticsTab(QWidget):
         if clean:
             self._session_clean += 1 if self._in_session else 0
         if solved:
-            self.status_label.setText(
-                "★ Solved — first try!" if clean else
-                f"★ Solved (after {self._wrong} wrong "
-                f"tr{'ies' if self._wrong != 1 else 'y'}"
-                f"{' and a hint' if self._used_hint else ''}).")
+            if clean:
+                text = tr("★ Solved — first try!")
+            elif self._used_hint:
+                text = tr("★ Solved (wrong tries: {wrong}, hint used).",
+                          wrong=self._wrong)
+            else:
+                text = tr("★ Solved (wrong tries: {wrong}).", wrong=self._wrong)
+            self.status_label.setText(text)
         line = " ".join(puzzle.solution_san)
-        self.solution_label.setText(f"Solution: {line}")
+        self.solution_label.setText(tr("Solution: {line}", line=line))
         self.solution_label.setVisible(True)
         self.hint_button.setEnabled(False)
         self.solution_button.setEnabled(False)
@@ -384,8 +398,8 @@ class TacticsTab(QWidget):
     def _on_show_solution(self):
         if self._puzzle is None or self._finished:
             return
-        self.status_label.setText("Solution revealed — counted as a fail; "
-                                  "it will come back tomorrow.")
+        self.status_label.setText(tr(
+            "Solution revealed — counted as a fail; it will come back tomorrow."))
         self._wrong += 1
         self._finish(solved=False)
 
@@ -405,8 +419,8 @@ class TacticsTab(QWidget):
             self._start_puzzle(candidates[0])
             self.refresh()
         else:
-            self.status_label.setText(
-                "Deck clear — nothing due. Analyze more games to add puzzles.")
+            self.status_label.setText(tr(
+                "Deck clear — nothing due. Analyze more games to add puzzles."))
 
     def _on_remove(self):
         if self._puzzle is None:

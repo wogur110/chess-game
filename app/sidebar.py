@@ -16,6 +16,7 @@ from . import theme
 from .engine_manager import DIFFICULTY_LEVELS
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
 from .game_controller import PlayerKind
+from .i18n import tr
 
 # Colours per move-quality category (move list + eval-graph dots).
 CATEGORY_COLORS = {
@@ -179,7 +180,7 @@ class EvalGraph(QWidget):
         super().__init__(parent)
         self.setFixedHeight(70)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Win probability over the game — click to jump to a move")
+        self.setToolTip(tr("Win probability over the game — click to jump to a move"))
         self._series: list = []      # white expectation 0..1 or None per position
         self._view = 0
         self._markers: list = []     # (position_index, category)
@@ -216,7 +217,7 @@ class EvalGraph(QWidget):
         if len(known) < 2:
             painter.setClipping(False)
             painter.setPen(QColor(theme.TEXT_DIM))
-            painter.drawText(rect, Qt.AlignCenter, "Play or analyze a game")
+            painter.drawText(rect, Qt.AlignCenter, tr("Play or analyze a game"))
             painter.end()
             return
 
@@ -329,7 +330,7 @@ class SuggestionsPanel(QWidget):
 
         if not self._suggestions:
             painter.setPen(QColor(theme.TEXT_DIM))
-            painter.drawText(self.rect(), Qt.AlignCenter, "Analyzing position…")
+            painter.drawText(self.rect(), Qt.AlignCenter, tr("Analyzing position…"))
             painter.end()
             return
 
@@ -390,7 +391,7 @@ class SuggestionsPanel(QWidget):
             painter.setPen(QColor(theme.TEXT_MUTED))
             painter.drawText(QRectF(width - 60, top, 56, self.ROW_H),
                              Qt.AlignRight | Qt.AlignVCenter,
-                             f"win {s.win_prob_mover * 100:.0f}%")
+                             tr("win {p}%", p=f"{s.win_prob_mover * 100:.0f}"))
         painter.end()
 
 
@@ -519,7 +520,7 @@ class Sidebar(QWidget):
         layout.setSpacing(10)
 
         # Status
-        self.status_label = QLabel("White to move")
+        self.status_label = QLabel(tr("White to move"))
         self.status_label.setObjectName("StatusLabel")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -531,18 +532,18 @@ class Sidebar(QWidget):
         layout.addWidget(self.opening_label)
 
         # Win probability
-        layout.addWidget(_section_label("Win probability"))
+        layout.addWidget(_section_label(tr("Win probability")))
         self.win_bar = WinBar()
         layout.addWidget(self.win_bar)
         eval_row = QHBoxLayout()
-        self.eval_label = QLabel("Eval: —")
+        self.eval_label = QLabel(tr("Eval: {text}", text="—"))
         self.eval_label.setObjectName("SubtleLabel")
         eval_row.addWidget(self.eval_label)
         eval_row.addStretch(1)
         layout.addLayout(eval_row)
 
         # Game review
-        layout.addWidget(_section_label("Game review"))
+        layout.addWidget(_section_label(tr("Game review")))
         self.eval_graph = EvalGraph()
         self.eval_graph.plyClicked.connect(self.evalGraphClicked)
         layout.addWidget(self.eval_graph)
@@ -550,27 +551,28 @@ class Sidebar(QWidget):
         self.move_detail_label.setWordWrap(True)
         self.move_detail_label.setVisible(False)
         layout.addWidget(self.move_detail_label)
-        self.replay_button = QPushButton("⟲ Replay from here")
-        self.replay_button.setToolTip(
+        self.replay_button = QPushButton(tr("⟲ Replay from here"))
+        self.replay_button.setToolTip(tr(
             "Rewind to just before this mistake and play the position out "
-            "against the engine — the current game is backed up first")
+            "against the engine — the current game is backed up first"))
         self.replay_button.setVisible(False)
         self._detail_index = 0
         self.replay_button.clicked.connect(
             lambda: self.replayClicked.emit(self._detail_index))
         layout.addWidget(self.replay_button)
-        self.accuracy_label = QLabel("Accuracy: —")
+        self.accuracy_label = QLabel(
+            tr("Accuracy: — (analyze the game for a full report)"))
         self.accuracy_label.setObjectName("SubtleLabel")
         self.accuracy_label.setWordWrap(True)
         layout.addWidget(self.accuracy_label)
-        self.analyze_button = QPushButton("Analyze game")
-        self.analyze_button.setToolTip(
-            "Evaluate every move so accuracy and ?!/?/?? annotations are complete")
+        self.analyze_button = QPushButton(tr("Analyze game"))
+        self.analyze_button.setToolTip(tr(
+            "Evaluate every move so accuracy and ?!/?/?? annotations are complete"))
         self.analyze_button.clicked.connect(self.analyzeClicked)
         layout.addWidget(self.analyze_button)
 
         # Players
-        layout.addWidget(_section_label("Players"))
+        layout.addWidget(_section_label(tr("Players")))
         players_grid = QGridLayout()
         players_grid.setHorizontalSpacing(8)
         players_grid.setVerticalSpacing(6)
@@ -581,8 +583,8 @@ class Sidebar(QWidget):
         for dot in (self.white_turn_dot, self.black_turn_dot):
             dot.setStyleSheet(f"color: {theme.ACCENT}; font-size: 10px;")
             dot.setFixedWidth(12)
-        white_label = QLabel("⚪ White")
-        black_label = QLabel("⚫ Black")
+        white_label = QLabel(tr("⚪ White"))
+        black_label = QLabel(tr("⚫ Black"))
         players_grid.addWidget(self.white_turn_dot, 0, 0)
         players_grid.addWidget(white_label, 0, 1)
         players_grid.addWidget(self.white_combo, 0, 2)
@@ -597,14 +599,14 @@ class Sidebar(QWidget):
             lambda idx: self.playerChanged.emit(chess.BLACK, self._kind_for(idx)))
 
         # Difficulty — one row per AI side (shown only for sides played by AI).
-        layout.addWidget(_section_label("AI difficulty"))
+        layout.addWidget(_section_label(tr("AI difficulty")))
         (self.white_diff_row, self.white_diff_slider,
-         self.white_diff_label) = self._make_diff_row(chess.WHITE, "⚪ White AI")
+         self.white_diff_label) = self._make_diff_row(chess.WHITE, tr("⚪ White AI"))
         (self.black_diff_row, self.black_diff_slider,
-         self.black_diff_label) = self._make_diff_row(chess.BLACK, "⚫ Black AI")
+         self.black_diff_label) = self._make_diff_row(chess.BLACK, tr("⚫ Black AI"))
         layout.addWidget(self.white_diff_row)
         layout.addWidget(self.black_diff_row)
-        self.no_ai_label = QLabel("No AI players — set White or Black to AI.")
+        self.no_ai_label = QLabel(tr("No AI players — set White or Black to AI."))
         self.no_ai_label.setObjectName("SubtleLabel")
         self.no_ai_label.setWordWrap(True)
         self.no_ai_label.setVisible(False)
@@ -612,22 +614,22 @@ class Sidebar(QWidget):
 
         # Suggestions
         suggestions_header = QHBoxLayout()
-        suggestions_header.addWidget(_section_label("AI suggestions"))
+        suggestions_header.addWidget(_section_label(tr("AI suggestions")))
         suggestions_header.addStretch(1)
-        self.coach_checkbox = QCheckBox("Coach")
-        self.coach_checkbox.setToolTip(
+        self.coach_checkbox = QCheckBox(tr("Coach"))
+        self.coach_checkbox.setToolTip(tr(
             "Warn immediately when your move throws away 10%+ win chance,\n"
-            "holding the AI reply so you can take the move back and retry")
+            "holding the AI reply so you can take the move back and retry"))
         self.coach_checkbox.toggled.connect(self.coachToggled)
         suggestions_header.addWidget(self.coach_checkbox)
-        self.threats_checkbox = QCheckBox("Threats")
-        self.threats_checkbox.setToolTip(
+        self.threats_checkbox = QCheckBox(tr("Threats"))
+        self.threats_checkbox.setToolTip(tr(
             "Show what the opponent is threatening (red arrows) and your\n"
             "hanging pieces (red rings). Tip: hold T to peek instead — first\n"
-            "find the threats yourself, then check")
+            "find the threats yourself, then check"))
         self.threats_checkbox.toggled.connect(self.threatsToggled)
         suggestions_header.addWidget(self.threats_checkbox)
-        self.hints_checkbox = QCheckBox("Arrows")
+        self.hints_checkbox = QCheckBox(tr("Arrows"))
         self.hints_checkbox.setChecked(True)
         self.hints_checkbox.toggled.connect(self.hintsToggled)
         suggestions_header.addWidget(self.hints_checkbox)
@@ -637,7 +639,7 @@ class Sidebar(QWidget):
         layout.addWidget(self.suggestions_panel)
 
         # Move list
-        layout.addWidget(_section_label("Moves"))
+        layout.addWidget(_section_label(tr("Moves")))
         self.moves_table = MovesTable()
         self.moves_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.moves_table, 1)
@@ -646,10 +648,10 @@ class Sidebar(QWidget):
         nav_row = QHBoxLayout()
         nav_row.setSpacing(6)
         self.nav_buttons = {}
-        for key, text, tip in (("start", "⏮", "Go to start (Home)"),
-                               ("back", "◀", "Back (←)"),
-                               ("fwd", "▶", "Forward (→)"),
-                               ("end", "⏭", "Go to end (End)")):
+        for key, text, tip in (("start", "⏮", tr("Go to start (Home)")),
+                               ("back", "◀", tr("Back (←)")),
+                               ("fwd", "▶", tr("Forward (→)")),
+                               ("end", "⏭", tr("Go to end (End)"))):
             button = QToolButton()
             button.setText(text)
             button.setToolTip(tip)
@@ -659,9 +661,9 @@ class Sidebar(QWidget):
             nav_row.addWidget(button)
         nav_row.addStretch(1)
         self.autoplay_button = QToolButton()
-        self.autoplay_button.setText("⏸ Pause AI")
+        self.autoplay_button.setText(tr("⏸ Pause AI"))
         self.autoplay_button.setCheckable(True)
-        self.autoplay_button.setToolTip("Pause / resume AI vs AI play")
+        self.autoplay_button.setToolTip(tr("Pause / resume AI vs AI play"))
         self.autoplay_button.toggled.connect(self._on_autoplay_toggled)
         nav_row.addWidget(self.autoplay_button)
         layout.addLayout(nav_row)
@@ -670,11 +672,11 @@ class Sidebar(QWidget):
         actions = QGridLayout()
         actions.setHorizontalSpacing(8)
         actions.setVerticalSpacing(8)
-        self.new_button = QPushButton("New game")
-        self.undo_button = QPushButton("↩ Undo")
-        self.save_button = QPushButton("Save…")
-        self.load_button = QPushButton("Load…")
-        self.flip_button = QPushButton("Flip board")
+        self.new_button = QPushButton(tr("New game"))
+        self.undo_button = QPushButton(tr("↩ Undo"))
+        self.save_button = QPushButton(tr("Save…"))
+        self.load_button = QPushButton(tr("Load…"))
+        self.flip_button = QPushButton(tr("Flip board"))
         self.new_button.setObjectName("PrimaryButton")
         actions.addWidget(self.new_button, 0, 0)
         actions.addWidget(self.undo_button, 0, 1)
@@ -693,8 +695,8 @@ class Sidebar(QWidget):
     @staticmethod
     def _player_combo() -> QComboBox:
         combo = QComboBox()
-        combo.addItem("Human")
-        combo.addItem("AI · Stockfish")
+        combo.addItem(tr("Human"))
+        combo.addItem(tr("AI · Stockfish"))
         return combo
 
     @staticmethod
@@ -724,11 +726,13 @@ class Sidebar(QWidget):
     def _update_diff_label(self, color: bool, value: int):
         level = DIFFICULTY_LEVELS[value]
         label = self.white_diff_label if color == chess.WHITE else self.black_diff_label
-        name = "⚪ White AI" if color == chess.WHITE else "⚫ Black AI"
-        label.setText(f"{name} — Level {value} · {level.label}")
+        name = tr("⚪ White AI") if color == chess.WHITE else tr("⚫ Black AI")
+        label.setText(tr("{name} — Level {value} · {label}",
+                         name=name, value=value, label=tr(level.label)))
 
     def _on_autoplay_toggled(self, paused: bool):
-        self.autoplay_button.setText("▶ Resume AI" if paused else "⏸ Pause AI")
+        self.autoplay_button.setText(tr("▶ Resume AI") if paused
+                                     else tr("⏸ Pause AI"))
         self.autoplayToggled.emit(not paused)
 
     # ---- update slots (called from the main window) ----
@@ -774,11 +778,11 @@ class Sidebar(QWidget):
             self.move_detail_label.setVisible(False)
             return
         color = CATEGORY_COLORS.get(klass, theme.TEXT)
-        label = MOVE_LABELS.get(klass, "")
+        label = tr(MOVE_LABELS.get(klass, ""))
         symbol = MOVE_SYMBOLS.get(klass, "")
         text = f"{label} {symbol}".strip()
         if best_alt and klass not in ("brilliant", "great", "best", "book"):
-            text += f"  ·  best was {best_alt}"
+            text += "  ·  " + tr("best was {alt}", alt=best_alt)
         self.move_detail_label.setText(text)
         self.move_detail_label.setStyleSheet(
             f"color: {color}; font-weight: 600; background: transparent;")
@@ -799,16 +803,18 @@ class Sidebar(QWidget):
         white = reviews[chess.WHITE]
         black = reviews[chess.BLACK]
         if white.accuracy is None and black.accuracy is None:
-            return "Accuracy: — (analyze the game for a full report)"
-        return f"Accuracy:  ⚪ {fmt(white)}   ⚫ {fmt(black)}"
+            return tr("Accuracy: — (analyze the game for a full report)")
+        return tr("Accuracy:  ⚪ {white}   ⚫ {black}",
+                  white=fmt(white), black=fmt(black))
 
     def set_review_progress(self, done: int, total: int):
         if total > 0 and done < total:
             self.analyze_button.setEnabled(False)
-            self.analyze_button.setText(f"Analyzing… {done}/{total}")
+            self.analyze_button.setText(tr("Analyzing… {done}/{total}",
+                                           done=done, total=total))
         else:
             self.analyze_button.setEnabled(True)
-            self.analyze_button.setText("Analyze game")
+            self.analyze_button.setText(tr("Analyze game"))
 
     def set_turn(self, turn: Optional[chess.Color]):
         self.white_turn_dot.setVisible(turn == chess.WHITE)
@@ -819,7 +825,7 @@ class Sidebar(QWidget):
 
     def set_eval(self, expectation_white, text: str):
         self.win_bar.set_value(expectation_white)
-        self.eval_label.setText(f"Eval: {text}")
+        self.eval_label.setText(tr("Eval: {text}", text=text))
 
     def set_nav_state(self, view_index: int, total: int):
         self.nav_buttons["start"].setEnabled(view_index > 0)

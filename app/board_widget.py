@@ -15,6 +15,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 from . import theme
+from .i18n import tr
 
 
 # ---- Piece sprites -----------------------------------------------------------
@@ -65,13 +66,13 @@ def sprites() -> PieceSprites:
 class PromotionDialog(QDialog):
     def __init__(self, color: chess.Color, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setWindowTitle("Promotion")
+        self.setWindowTitle(tr("Promotion"))
         self.setModal(True)
         self.choice: Optional[chess.PieceType] = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
-        label = QLabel("Promote to:")
+        label = QLabel(tr("Promote to:"))
         label.setObjectName("SectionTitle")
         layout.addWidget(label)
 

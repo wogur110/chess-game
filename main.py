@@ -5,11 +5,11 @@ Run with:  python main.py
 
 import sys
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
 from app import APP_NAME
-from app.engine_manager import EngineManager
-from app.main_window import MainWindow
+from app.i18n import set_language
 from app.theme import build_palette, build_stylesheet
 
 
@@ -25,6 +25,13 @@ def main() -> int:
     app.setStyle("Fusion")
     app.setPalette(build_palette())
     app.setStyleSheet(build_stylesheet())
+    # The language must be set before any window is built — widgets read
+    # their labels through tr() exactly once, at construction time.
+    set_language(str(QSettings().value("language") or "en"))
+
+    # Imported here so every module-level default already sees the language.
+    from app.engine_manager import EngineManager
+    from app.main_window import MainWindow
 
     engine = EngineManager()
     window = MainWindow(engine)

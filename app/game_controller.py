@@ -29,6 +29,7 @@ from .eval_utils import (KEY_CATEGORIES, MOVE_LABELS, classify_loss,
                          classify_move, expectation_for, format_score_white,
                          move_accuracy, recommendation_probs,
                          score_to_expectation_white)
+from .i18n import tr
 from .opening_book import load_book
 from .puzzle_store import Puzzle
 
@@ -863,18 +864,20 @@ class GameController(QObject):
         outcome = self.outcome(board)
         if outcome is not None:
             return self._outcome_text(outcome)
-        turn_name = "White" if board.turn == chess.WHITE else "Black"
+        turn_name = tr("White") if board.turn == chess.WHITE else tr("Black")
         if not self.is_live:
-            return f"Reviewing — position after move {self._view} of {len(self._moves)}"
+            return tr("Reviewing — position after move {view} of {total}",
+                      view=self._view, total=len(self._moves))
         if self._coach_alert is not None:
-            label = MOVE_LABELS.get(self._coach_alert.category, "Mistake")
-            return f"Coach — that looks like a {label.lower()}. Take back or keep it?"
+            label = tr(MOVE_LABELS.get(self._coach_alert.category, "Mistake")).lower()
+            return tr("Coach — that looks like a {label}. Take back or keep it?",
+                      label=label)
         if self.players[board.turn] == PlayerKind.AI:
             both_ai = not self.human_colors()
             if both_ai and not self.autoplay:
-                return f"{turn_name} to move — AI paused"
-            return f"{turn_name} to move — Stockfish is thinking…"
-        return f"{turn_name} to move — your turn"
+                return tr("{turn} to move — AI paused", turn=turn_name)
+            return tr("{turn} to move — Stockfish is thinking…", turn=turn_name)
+        return tr("{turn} to move — your turn", turn=turn_name)
 
     @staticmethod
     def _outcome_text(outcome: chess.Outcome) -> str:
@@ -887,11 +890,14 @@ class GameController(QObject):
             chess.Termination.SEVENTYFIVE_MOVES: "75-move rule",
             chess.Termination.FIVEFOLD_REPETITION: "Fivefold repetition",
         }
-        reason = reasons.get(outcome.termination, outcome.termination.name.title())
+        reason = tr(reasons.get(outcome.termination,
+                                outcome.termination.name.title()))
         if outcome.winner is None:
-            return f"Draw — {reason} ({outcome.result()})"
-        winner = "White" if outcome.winner == chess.WHITE else "Black"
-        return f"{reason} — {winner} wins ({outcome.result()})"
+            return tr("Draw — {reason} ({result})",
+                      reason=reason, result=outcome.result())
+        winner = tr("White") if outcome.winner == chess.WHITE else tr("Black")
+        return tr("{reason} — {winner} wins ({result})",
+                  reason=reason, winner=winner, result=outcome.result())
 
     # ---- Save / load -----------------------------------------------------------
 
