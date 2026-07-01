@@ -500,6 +500,7 @@ class Sidebar(QWidget):
     autoplayToggled = Signal(bool)
     hintsToggled = Signal(bool)
     coachToggled = Signal(bool)
+    threatsToggled = Signal(bool)
     flipClicked = Signal()
     suggestionClicked = Signal(object)
     analyzeClicked = Signal()
@@ -619,6 +620,13 @@ class Sidebar(QWidget):
             "holding the AI reply so you can take the move back and retry")
         self.coach_checkbox.toggled.connect(self.coachToggled)
         suggestions_header.addWidget(self.coach_checkbox)
+        self.threats_checkbox = QCheckBox("Threats")
+        self.threats_checkbox.setToolTip(
+            "Show what the opponent is threatening (red arrows) and your\n"
+            "hanging pieces (red rings). Tip: hold T to peek instead — first\n"
+            "find the threats yourself, then check")
+        self.threats_checkbox.toggled.connect(self.threatsToggled)
+        suggestions_header.addWidget(self.threats_checkbox)
         self.hints_checkbox = QCheckBox("Arrows")
         self.hints_checkbox.setChecked(True)
         self.hints_checkbox.toggled.connect(self.hintsToggled)

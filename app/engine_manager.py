@@ -56,6 +56,8 @@ DEFAULT_DIFFICULTY = 5
 ANALYSIS_LIMIT = chess.engine.Limit(depth=22, time=0.9)
 # Shorter per-position budget for whole-game review (dozens of positions).
 FULL_ANALYSIS_LIMIT = chess.engine.Limit(depth=16, time=0.25)
+# Budget for the "what is the opponent threatening?" null-move probe.
+THREAT_LIMIT = chess.engine.Limit(depth=14, time=0.35)
 MULTIPV = 3
 
 
@@ -218,6 +220,7 @@ class EngineManager(QObject):
     """Owns both engine workers; all public methods are GUI-thread-only."""
 
     analysisReady = Signal(int, int, object)   # generation, ctx, AnalysisResult
+    threatsReady = Signal(int, int, object)    # generation, ctx, list[AnalysisLine]
     moveReady = Signal(int, object)            # generation, chess.Move
     fullAnalysisLine = Signal(int, object)       # game_id, ReviewLine
     fullAnalysisDone = Signal(int, bool)         # game_id, completed
@@ -272,7 +275,10 @@ class EngineManager(QObject):
         self._play.submit(job)
 
     def request_analysis(self, board: chess.Board, generation: int, ctx: int,
-                         multipv: int = MULTIPV):
+                         multipv: int = MULTIPV, threats: bool = False):
+        """Analyse a position; with `threats`, also probe what the opponent
+        would play if the mover passed (same job, so the latest-wins queue
+        can never split an eval from its threat probe)."""
         if not self._analysis or board.is_game_over():
             return
         snapshot = board.copy(stack=False)
@@ -309,8 +315,43 @@ class EngineManager(QObject):
                 ))
             if lines:
                 self.analysisReady.emit(generation, ctx, AnalysisResult(lines=lines, ply=snapshot.ply()))
+            if threats:
+                self.threatsReady.emit(generation, ctx,
+                                       self._analyse_threats(engine, snapshot))
 
         self._analysis.submit(job)
+
+    @staticmethod
+    def _analyse_threats(engine: chess.engine.SimpleEngine,
+                         board: chess.Board) -> list:
+        """The opponent's best moves if the mover passed (null-move probe).
+        In check there is no meaningful 'pass', so the list is empty."""
+        if board.is_check():
+            return []
+        null_board = board.copy(stack=False)
+        null_board.push(chess.Move.null())
+        try:
+            infos = engine.analyse(null_board, THREAT_LIMIT, multipv=2)
+        except Exception:
+            return []
+        if isinstance(infos, dict):
+            infos = [infos]
+        lines: list[AnalysisLine] = []
+        for info in infos:
+            pv = info.get("pv")
+            score = info.get("score")
+            if not pv or score is None:
+                continue
+            move = pv[0]
+            try:
+                san = null_board.san(move)
+            except Exception:
+                continue
+            lines.append(AnalysisLine(
+                move=move, san=san, score=score,
+                expectation_white=score_to_expectation_white(
+                    score, ply=null_board.ply())))
+        return lines
 
     def cancel_full_analysis(self):
         """Stop an in-flight whole-game review (its loop checks this token)."""

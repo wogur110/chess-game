@@ -110,6 +110,8 @@ class BoardWidget(QWidget):
         self._suggestions: list = []
         self._show_hints = True
         self._coach_arrow: Optional[chess.Move] = None
+        self._threat_moves: list = []
+        self._show_threats = False
 
         self._selected: Optional[chess.Square] = None
         self._legal_targets: set[chess.Square] = set()
@@ -135,6 +137,7 @@ class BoardWidget(QWidget):
         self._board = board.copy(stack=False)
         self._last_move = last_move
         self._coach_arrow = None
+        self._threat_moves = []   # stale for the new position; re-sent by analysis
         self._clear_selection()
         self._anim.stop()
         self._anim_move = None
@@ -181,6 +184,17 @@ class BoardWidget(QWidget):
     def set_coach_arrow(self, move: Optional[chess.Move]):
         """A red arrow showing the refutation of the player's last move."""
         self._coach_arrow = move
+        self.update()
+
+    def set_threats(self, moves: list):
+        """Opponent threat moves (shown as red arrows while threats are on)."""
+        self._threat_moves = list(moves)[:2]
+        self.update()
+
+    def set_show_threats(self, show: bool):
+        self._show_threats = show
+        if not show:
+            self._threat_moves = []
         self.update()
 
     # ---- Geometry ----
@@ -406,6 +420,15 @@ class BoardWidget(QWidget):
         if self._show_hints and self._suggestions and not self._dragging:
             self._paint_suggestions(painter, s)
 
+        # Threat radar: opponent threats (red arrows) + hanging pieces (rings)
+        if self._show_threats and not self._dragging:
+            for rank in range(len(self._threat_moves) - 1, -1, -1):
+                color = QColor(theme.THREAT_ARROW)
+                color.setAlpha(190 if rank == 0 else 115)
+                width = s * (0.15 if rank == 0 else 0.11)
+                self._paint_arrow(painter, self._threat_moves[rank], color, width)
+            self._paint_hanging_rings(painter, s)
+
         # Coach refutation arrow (red, on top of the suggestions)
         if self._coach_arrow is not None and not self._dragging:
             color = QColor(theme.BAD)
@@ -467,6 +490,37 @@ class BoardWidget(QWidget):
             self._paint_arrow(painter, suggestion.move, color, width)
         for rank, suggestion in enumerate(self._suggestions):
             self._paint_probability_badge(painter, suggestion, rank, s)
+
+    _RING_VALUE = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3,
+                   chess.ROOK: 5, chess.QUEEN: 9}
+
+    def _hanging_squares(self) -> list:
+        """Side-to-move pieces that are en prise: attacked while undefended,
+        or attacked by something cheaper than they are."""
+        board = self._board
+        out: list = []
+        for square, piece in board.piece_map().items():
+            if piece.color != board.turn or piece.piece_type == chess.KING:
+                continue
+            attackers = board.attackers(not piece.color, square)
+            if not attackers:
+                continue
+            defenders = board.attackers(piece.color, square)
+            cheapest = min(self._RING_VALUE.get(
+                board.piece_at(a).piece_type, 99) for a in attackers)
+            if not defenders or cheapest < self._RING_VALUE[piece.piece_type]:
+                out.append(square)
+        return out
+
+    def _paint_hanging_rings(self, painter: QPainter, s: int):
+        color = QColor(theme.THREAT_ARROW)
+        color.setAlpha(200)
+        painter.setPen(QPen(color, max(2.5, s * 0.055)))
+        painter.setBrush(Qt.NoBrush)
+        radius = s * 0.44
+        for square in self._hanging_squares():
+            center = QRectF(self._square_rect(square)).center()
+            painter.drawEllipse(center, radius, radius)
 
     def _paint_arrow(self, painter: QPainter, move: chess.Move, color: QColor,
                      width: float):

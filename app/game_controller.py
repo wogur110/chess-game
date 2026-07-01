@@ -122,6 +122,7 @@ class GameController(QObject):
     reviewProgress = Signal(int, int)                # done, total (0,0 = idle)
     engineMissing = Signal(str)
     coachAlert = Signal(object)                      # CoachAlert
+    threatsChanged = Signal(list)                    # opponent threats (moves)
 
     AI_DELAY_MS = 150
     AI_VS_AI_DELAY_MS = 450
@@ -133,6 +134,7 @@ class GameController(QObject):
         self.engine = engine
         self.engine.moveReady.connect(self._on_engine_move)
         self.engine.analysisReady.connect(self._on_analysis)
+        self.engine.threatsReady.connect(self._on_threats)
         self.engine.fullAnalysisLine.connect(self._on_full_line)
         self.engine.fullAnalysisDone.connect(self._on_full_done)
         self.engine.engineError.connect(self.engineMissing)
@@ -167,6 +169,9 @@ class GameController(QObject):
         self.coach_enabled = False
         self._coach_wait: Optional[dict] = None    # {"index", "generation"}
         self._coach_alert: Optional[CoachAlert] = None
+
+        # Threat radar: analysis requests also probe the opponent's threats.
+        self.threats_enabled = False
 
     # ---- Derived state -------------------------------------------------------
 
@@ -646,7 +651,8 @@ class GameController(QObject):
                 )
             else:
                 self.evalChanged.emit(None, "…")
-            self.engine.request_analysis(board, self._generation, self._view)
+            self.engine.request_analysis(board, self._generation, self._view,
+                                         threats=self.threats_enabled)
         self._maybe_start_ai(board)
 
     def _maybe_start_ai(self, board: Optional[chess.Board] = None):
@@ -714,6 +720,21 @@ class GameController(QObject):
             for line, rec, exp in zip(result.lines, recs, mover_exps)
         ]
         self.suggestionsChanged.emit(suggestions)
+
+    # ---- Threat radar ----------------------------------------------------------
+
+    def set_threats_enabled(self, enabled: bool):
+        self.threats_enabled = enabled
+        if enabled:
+            # Re-request so the current position gets its threat probe.
+            self._refresh_engine_requests()
+
+    def _on_threats(self, generation: int, ctx: int, lines: list):
+        if generation != self._generation or ctx != self._view:
+            return
+        if not self.threats_enabled:
+            return
+        self.threatsChanged.emit([line.move for line in lines])
 
     # ---- Coach mode ------------------------------------------------------------
 

@@ -206,6 +206,8 @@ class MainWindow(QMainWindow):
         s.autoplayToggled.connect(self.controller.set_autoplay)
         s.hintsToggled.connect(self.board.set_show_hints)
         s.coachToggled.connect(self._on_coach_toggled)
+        s.threatsToggled.connect(self._on_threats_toggled)
+        self.controller.threatsChanged.connect(self.board.set_threats)
         s.flipClicked.connect(self._on_flip)
         s.suggestionClicked.connect(self._on_suggestion_clicked)
         s.analyzeClicked.connect(self.controller.analyze_game)
@@ -237,6 +239,33 @@ class MainWindow(QMainWindow):
                 opening_slot()
         else:
             play_slot()
+
+    # ---- Threat radar ----
+
+    def keyPressEvent(self, event):
+        # Hold T to peek at the threats (a retrieval exercise: find them
+        # yourself first, then check). Ignored while the toggle is on.
+        if (event.key() == Qt.Key_T and not event.isAutoRepeat()
+                and self.tabs.currentWidget() is not self.opening_tab):
+            self._set_threats_peek(True)
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key_T and not event.isAutoRepeat():
+            self._set_threats_peek(False)
+            return
+        super().keyReleaseEvent(event)
+
+    def _set_threats_peek(self, active: bool):
+        if self.sidebar.threats_checkbox.isChecked():
+            return   # already always-on
+        self.controller.set_threats_enabled(active)
+        self.board.set_show_threats(active)
+
+    def _on_threats_toggled(self, enabled: bool):
+        self.controller.set_threats_enabled(enabled)
+        self.board.set_show_threats(enabled)
 
     def _sync_initial_state(self):
         c = self.controller
@@ -485,6 +514,8 @@ class MainWindow(QMainWindow):
         self.sidebar.hints_checkbox.setChecked(hints)   # drives the board too
         coach = self._as_bool(s.value("coach"), False)
         self.sidebar.coach_checkbox.setChecked(coach)   # drives the controller too
+        threats = self._as_bool(s.value("threats"), False)
+        self.sidebar.threats_checkbox.setChecked(threats)
 
         tab = s.value("tab")
         if tab is not None:
@@ -514,6 +545,7 @@ class MainWindow(QMainWindow):
         s.setValue("difficulty/black", c.difficulty_for(chess.BLACK))
         s.setValue("hints", self.sidebar.hints_checkbox.isChecked())
         s.setValue("coach", self.sidebar.coach_checkbox.isChecked())
+        s.setValue("threats", self.sidebar.threats_checkbox.isChecked())
         s.setValue("tab", self.tabs.currentIndex())
 
     # ---- Shutdown ----

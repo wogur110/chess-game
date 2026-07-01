@@ -28,6 +28,7 @@ SQ_CHECK = "#e06c75"
 
 # Suggestion arrow colors by rank (best → third)
 ARROW_COLORS = ["#2dd4a0", "#46b1e1", "#c084fc"]
+THREAT_ARROW = "#e06c75"     # opponent threats / hanging-piece rings
 
 EVALBAR_WHITE = "#e8eaed"
 EVALBAR_BLACK = "#2a2e36"

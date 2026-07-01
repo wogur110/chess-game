@@ -57,6 +57,10 @@ the move you're viewing.
   chance, the AI's reply is held and a banner offers **Take back** (retry the
   move yourself), **Show why** (the refutation is drawn as a red arrow), or
   **Keep move** — immediate feedback at the moment of the mistake
+- **Threat radar** — hold `T` (or use the "Threats" checkbox) to see what the
+  opponent is threatening: red arrows for the moves they would play if you
+  passed, red rings on your hanging pieces — trains the "what does my
+  opponent want?" habit
 - **Adjustable AI difficulty** — 10 slider levels, from beginner (~800 Elo) to
   full strength (3200+); White and Black AI can be set to different levels for
   engine-vs-engine matchups
@@ -150,6 +154,7 @@ the whole `dist\ChessStudio` folder (Stockfish included, works offline).
 | New game / Save / Load | `Ctrl+N` / `Ctrl+S` / `Ctrl+O` |
 | Toggle suggestion arrows | "Arrows" checkbox in the sidebar |
 | Toggle coach warnings | "Coach" checkbox in the sidebar |
+| Peek at opponent threats | Hold `T` (or the "Threats" checkbox for always-on) |
 | Play a suggested move | Click its row in the sidebar |
 | Review the whole game | "Analyze game" in the sidebar (accuracy + annotations) |
 | Retry a mistake | "⟲ Replay from here" under the move detail (after analyzing) |
