@@ -199,6 +199,13 @@ class GameController(QObject):
         return list(self._san)
 
     @property
+    def moves(self) -> list[chess.Move]:
+        return list(self._moves)
+
+    def base_board(self) -> chess.Board:
+        return self._base.copy()
+
+    @property
     def base_fullmove(self) -> int:
         return self._base.fullmove_number
 
@@ -343,14 +350,16 @@ class GameController(QObject):
         self.movesChanged.emit()
         self._after_position_change(None, animate=False)
 
-    def start_from(self, moves: list, human_color: chess.Color):
-        """Start a game from the standard position with `moves` pre-played
-        (e.g. an opening line); the human takes `human_color`, the AI the other."""
+    def start_from(self, moves: list, human_color: chess.Color,
+                   base: Optional[chess.Board] = None):
+        """Start a game from `base` (standard position by default) with `moves`
+        pre-played (e.g. an opening line, or a game up to a mistake); the human
+        takes `human_color`, the AI the other."""
         self._generation += 1
         self._bump_game()
         self._set_thinking(False)
-        self._base = chess.Board()
-        replay = chess.Board()
+        self._base = base.copy() if base is not None else chess.Board()
+        replay = self._base.copy()
         san: list[str] = []
         applied: list[chess.Move] = []
         for move in moves:

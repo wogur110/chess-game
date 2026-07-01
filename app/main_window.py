@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         s.suggestionClicked.connect(self._on_suggestion_clicked)
         s.analyzeClicked.connect(self.controller.analyze_game)
         s.evalGraphClicked.connect(self.controller.navigate)
+        s.replayClicked.connect(self._on_replay_from)
         self.board.moveRequested.connect(self._on_board_move)
         self.board.backRequested.connect(lambda: self.controller.step(-1))
 
@@ -368,6 +369,37 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
         self.statusBar().showMessage(
             "Continuing from the opening — good luck!", 5000)
+
+    def _on_replay_from(self, view_index: int):
+        """Rewind to just before the mistake at `view_index` and play it out
+        (the mistake's side becomes human, the other side AI)."""
+        c = self.controller
+        i = view_index - 1
+        if i < 0 or i >= c.total_moves:
+            return
+        san = c.san_history[i]
+        mover = c.board_at(i).turn
+        # Back up the full game first — replaying truncates the line.
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = _default_save_dir() / f"replay_backup_{stamp}.pgn"
+        note = ""
+        try:
+            c.save_pgn(str(backup))
+            note = f" (game backed up to {backup.name})"
+        except OSError:
+            answer = QMessageBox.question(
+                self, APP_NAME,
+                "Could not back up the current game. Replay anyway? "
+                "The rest of the line will be discarded.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                return
+        c.start_from(c.moves[:i], mover, base=c.base_board())
+        self._auto_orient = True
+        self._apply_orientation()
+        self.tabs.setCurrentIndex(0)
+        self.statusBar().showMessage(
+            f"Replaying from before {san} — find a better move!{note}", 8000)
 
     def _apply_orientation(self):
         if not self._auto_orient:

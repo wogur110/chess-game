@@ -504,6 +504,10 @@ class Sidebar(QWidget):
     suggestionClicked = Signal(object)
     analyzeClicked = Signal()
     evalGraphClicked = Signal(int)              # position index
+    replayClicked = Signal(int)                 # replay from before this ply
+
+    # Move grades that earn a "Replay from here" training button.
+    REPLAY_CATEGORIES = ("miss", "mistake", "blunder")
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -545,6 +549,15 @@ class Sidebar(QWidget):
         self.move_detail_label.setWordWrap(True)
         self.move_detail_label.setVisible(False)
         layout.addWidget(self.move_detail_label)
+        self.replay_button = QPushButton("⟲ Replay from here")
+        self.replay_button.setToolTip(
+            "Rewind to just before this mistake and play the position out "
+            "against the engine — the current game is backed up first")
+        self.replay_button.setVisible(False)
+        self._detail_index = 0
+        self.replay_button.clicked.connect(
+            lambda: self.replayClicked.emit(self._detail_index))
+        layout.addWidget(self.replay_button)
         self.accuracy_label = QLabel("Accuracy: —")
         self.accuracy_label.setObjectName("SubtleLabel")
         self.accuracy_label.setWordWrap(True)
@@ -747,6 +760,8 @@ class Sidebar(QWidget):
     def _set_move_detail(self, view_index: int, annotations: list, best_alt: str):
         klass = (annotations[view_index - 1]
                  if 1 <= view_index <= len(annotations) else None)
+        self._detail_index = view_index
+        self.replay_button.setVisible(klass in self.REPLAY_CATEGORIES)
         if klass is None:
             self.move_detail_label.setVisible(False)
             return

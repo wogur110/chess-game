@@ -49,6 +49,9 @@ the move you're viewing.
     dots at the key moments; click anywhere on it to jump to that move
   - **per-side accuracy** and a count of the notable moves
   - **"best was …"** shows the engine's best move when you played something else
+  - **"Replay from here"** on any miss/mistake/blunder — rewinds to just
+    before the error and lets you play the position out against the engine
+    (the original game is backed up to `saves/` first)
   - the **opening name** (ECO code) is shown live as you play
 - **Coach mode** — optional; when your move throws away 10%+ of your win
   chance, the AI's reply is held and a banner offers **Take back** (retry the
@@ -149,6 +152,7 @@ the whole `dist\ChessStudio` folder (Stockfish included, works offline).
 | Toggle coach warnings | "Coach" checkbox in the sidebar |
 | Play a suggested move | Click its row in the sidebar |
 | Review the whole game | "Analyze game" in the sidebar (accuracy + annotations) |
+| Retry a mistake | "⟲ Replay from here" under the move detail (after analyzing) |
 | Jump to a move from the graph | Click the eval graph in the sidebar |
 | Study openings | Opening Study tab → pick an opening on the left |
 | Step through an opening demo | ▶ button or `→` (clicking a book-move row also works) |
