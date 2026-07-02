@@ -1,4 +1,4 @@
 """Chess Studio — offline chess GUI with Stockfish analysis."""
 
 APP_NAME = "Chess Studio"
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.5"

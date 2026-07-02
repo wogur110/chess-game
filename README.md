@@ -63,9 +63,13 @@ python main.py
 - **Puzzle rush & themed practice** — a bundled starter pack of ~3,600
   curated Lichess puzzles (CC0, fully offline): **Rush** gives you 3 strikes
   / 3 minutes with escalating difficulty and a best-score record, and
-  **Practice** drills one motif at a time (fork, pin, back-rank mate, …),
-  easiest first — tactics volume from day one, before your own mistake deck
+  **Practice** drills one motif at a time (fork, pin, back-rank mate, …) in
+  random order — tactics volume from day one, before your own mistake deck
   fills up.
+- **Estimated puzzle rating** — every rush/practice attempt updates an
+  Elo-style estimate (clean solve = win, wrong move or hint = loss), with
+  the full attempt history persisted so the number tracks your record over
+  time.
 
 ### Review
 - **Chess.com-style game review** — move grades (**Brilliant `!!` / Great `!`
@@ -155,6 +159,7 @@ app/
   opening_tab.py         opening study tab (browser, demo/drill, stats)
   puzzle_store.py        personal tactics deck (mined mistakes + Leitner scheduling)
   puzzle_pack.py         bundled starter-pack loader (rush / themed practice)
+  puzzle_rating.py       Elo-style estimated puzzle rating (persistent)
   tactics_tab.py         tactics tab (mistake deck, puzzle rush, themed practice)
   game_library.py        automatic PGN archive of finished games
   insights.py            cross-game mistake classification + persistent log

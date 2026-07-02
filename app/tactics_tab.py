@@ -24,6 +24,7 @@ from .board_widget import BoardWidget
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
 from .i18n import tr
 from .puzzle_pack import THEME_LABELS, load_pack
+from .puzzle_rating import PuzzleRating
 from .puzzle_store import BOX_INTERVALS, Puzzle, PuzzleStore
 from .sidebar import CATEGORY_COLORS
 
@@ -52,6 +53,7 @@ class TacticsTab(QWidget):
         super().__init__(parent)
         self.store = store
         self.pack = load_pack()
+        self.rating = PuzzleRating()
         self._puzzle = None                 # Puzzle (deck) or PackPuzzle
         self._mode = "deck"                 # "deck" | "rush" | "practice"
         self._board = chess.Board()
@@ -134,13 +136,21 @@ class TacticsTab(QWidget):
         rush_row.addWidget(self.rush_button)
         self.practice_button = QPushButton(tr("Practice"))
         self.practice_button.setToolTip(tr(
-            "Practice the selected theme untimed, easiest first."))
+            "Practice the selected theme untimed, in random order."))
         self.practice_button.clicked.connect(self._start_practice)
         rush_row.addWidget(self.practice_button)
         deck_layout.addLayout(rush_row)
         self.rush_best_label = QLabel("")
         self.rush_best_label.setObjectName("SubtleLabel")
         deck_layout.addWidget(self.rush_best_label)
+        self.rating_label = QLabel("")
+        self.rating_label.setObjectName("SubtleLabel")
+        self.rating_label.setWordWrap(True)
+        self.rating_label.setToolTip(tr(
+            "Elo estimate from your rush and practice results — a clean "
+            "solve counts as a win, any wrong move or hint as a loss."))
+        deck_layout.addWidget(self.rating_label)
+        self._update_rating_label()
         if self.pack is None:
             self.rush_best_label.setText(tr(
                 "Puzzle pack not found — run tools/build_puzzle_pack.py."))
@@ -445,6 +455,9 @@ class TacticsTab(QWidget):
         clean = solved and self._wrong == 0 and not self._used_hint
         if self._mode == "deck":
             self.store.record_attempt(puzzle.key, solved, clean)
+        elif self._mode == "practice":
+            # Like the Lichess trainer: only a clean solve wins rating.
+            self._record_rating(puzzle, clean)
         if clean:
             self._session_clean += 1 if self._in_session else 0
         if solved:
@@ -532,6 +545,26 @@ class TacticsTab(QWidget):
         best = int(QSettings().value("rush_best", 0))
         self.rush_best_label.setText(tr("Best: {best}", best=best))
 
+    def _update_rating_label(self):
+        r = self.rating
+        if r.attempt_count == 0:
+            self.rating_label.setText(
+                tr("Puzzle rating: — (solve rush or practice puzzles)"))
+        elif r.provisional:
+            self.rating_label.setText(
+                tr("Puzzle rating: ~{rating} (provisional, {n} attempts)",
+                   rating=r.rating, n=r.attempt_count))
+        else:
+            self.rating_label.setText(
+                tr("Puzzle rating: {rating} ({n} attempts)",
+                   rating=r.rating, n=r.attempt_count))
+
+    def _record_rating(self, puzzle, won: bool):
+        """Update the Elo estimate for a rated pack puzzle attempt."""
+        if hasattr(puzzle, "rating"):
+            self.rating.record(puzzle.rating, won)
+            self._update_rating_label()
+
     def _set_pack_origin(self, puzzle, with_themes: bool):
         themes = ", ".join(tr(THEME_LABELS[t]) for t in puzzle.themes
                            if t in THEME_LABELS)
@@ -579,6 +612,7 @@ class TacticsTab(QWidget):
     def _rush_solved(self):
         self._rush_score += 1
         self._rush_target += RUSH_STEP
+        self._record_rating(self._puzzle, True)
         self._update_rush_info()
         self.status_label.setText(tr("Solved! Next…"))
         generation = self._generation
@@ -588,6 +622,7 @@ class TacticsTab(QWidget):
         """In a rush the first wrong move fails the puzzle — no retries."""
         self._finished = True
         self._rush_strikes += 1
+        self._record_rating(self._puzzle, False)
         self.board_widget.set_movable_colors([])
         correct = chess.Move.from_uci(self._puzzle.solution[self._step])
         self.board_widget.set_suggestions([_Hint(correct, 1.0)])
@@ -658,6 +693,7 @@ class TacticsTab(QWidget):
         self._practice_list = self.pack.by_theme(theme)
         if not self._practice_list:
             return
+        random.shuffle(self._practice_list)   # a fresh mix every session
         self._mode = "practice"
         self._practice_index = 0
         self._serve_practice()

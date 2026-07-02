@@ -326,8 +326,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {"ko": {
     "A wrong move fails the puzzle.":
         "3스트라이크 또는 3분 — 풀수록 어려워집니다. "
         "오답을 두면 그 퍼즐은 실패입니다.",
-    "Practice the selected theme untimed, easiest first.":
-        "선택한 테마를 시간 제한 없이 쉬운 것부터 연습합니다.",
+    "Practice the selected theme untimed, in random order.":
+        "선택한 테마를 시간 제한 없이 무작위 순서로 연습합니다.",
     "Best: {best}": "최고 기록: {best}",
     "⏱ {time} · Score {score} · ✗ {strikes}/3":
         "⏱ {time} · 점수 {score} · ✗ {strikes}/3",
@@ -341,6 +341,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {"ko": {
     "Rating {rating} · {themes}": "레이팅 {rating} · {themes}",
     "Puzzle pack not found — run tools/build_puzzle_pack.py.":
         "퍼즐 팩이 없습니다 — tools/build_puzzle_pack.py를 실행하세요.",
+
+    # ---- puzzle rating ----
+    "Puzzle rating: — (solve rush or practice puzzles)":
+        "퍼즐 레이팅: — (러시나 테마 연습을 풀어보세요)",
+    "Puzzle rating: ~{rating} (provisional, {n} attempts)":
+        "퍼즐 레이팅: ~{rating} (예비 추정, {n}회 풀이)",
+    "Puzzle rating: {rating} ({n} attempts)":
+        "퍼즐 레이팅: {rating} ({n}회 풀이)",
+    "Elo estimate from your rush and practice results — a clean "
+    "solve counts as a win, any wrong move or hint as a loss.":
+        "러시·테마 연습 결과로 계산한 Elo 추정치 — 깔끔하게 풀면 승리,\n"
+        "오답이나 힌트 사용은 패배로 계산합니다.",
 
     # ---- suggestions toggle ----
     "Suggestions": "추천 수",
