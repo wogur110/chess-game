@@ -30,10 +30,14 @@ python main.py
   bottom.
 - **10 difficulty levels** (~800 Elo → 3200+), set **independently per color**;
   defaults to level 7 (Master · 2300).
-- **Live analysis while you play** — win-probability bar next to the board,
-  top-3 engine suggestions drawn as arrows with probabilities, and the opening
-  name (ECO) recognized as you play. The analysis engine always runs at full
-  strength, whatever the difficulty.
+- **Live analysis while you play** — win-probability bar next to the board
+  and the opening name (ECO) recognized as you play. The engine's top-3
+  suggested moves (arrows + probabilities) are **off by default** for a
+  normal-game experience — flip the "Suggestions" checkbox to see them. The
+  analysis engine always runs at full strength, whatever the difficulty.
+- **Game library** — finished games are archived automatically as PGN under
+  `saves/library/`; the Library tab lists them (players, result, opening)
+  and reopens any of them in the Play tab.
 
 ### Training
 - **Coach mode** — when your move throws away 10%+ of your win chance, the
@@ -52,6 +56,10 @@ python main.py
 - **Spaced repetition** — puzzles are scheduled in Leitner boxes
   (1/3/7/21/60 days): clean solves move up, fails come back tomorrow. The
   tab badge shows what's due; **Review due** runs today's queue.
+- **Cross-game mistake insights** — every reviewed mistake is classified
+  offline by phase (opening/middlegame/endgame) and pattern (hung a piece,
+  missed a mate, missed a fork, …) and logged persistently; the Library tab
+  aggregates them into "your most common pattern is X" style feedback.
 - **Puzzle rush & themed practice** — a bundled starter pack of ~3,600
   curated Lichess puzzles (CC0, fully offline): **Rush** gives you 3 strikes
   / 3 minutes with escalating difficulty and a best-score record, and
@@ -97,6 +105,8 @@ python main.py
 | Peek at opponent threats | Hold `T` (or the "Threats" checkbox) |
 | Retrain your mistakes | Tactics tab → "Review due" |
 | Puzzle rush / themed practice | Tactics tab → "Start rush" / "Practice" |
+| Show engine suggestions | "Suggestions" checkbox in the sidebar (off by default) |
+| Browse archived games / insights | Library tab (finished games auto-save there) |
 | Drill an opening | Opening Study tab → pick a line → "Start drill" |
 | Change the language | Options menu → Language / 언어 |
 
@@ -146,7 +156,10 @@ app/
   puzzle_store.py        personal tactics deck (mined mistakes + Leitner scheduling)
   puzzle_pack.py         bundled starter-pack loader (rush / themed practice)
   tactics_tab.py         tactics tab (mistake deck, puzzle rush, themed practice)
-  main_window.py         assembles everything (Play / Opening Study / Tactics)
+  game_library.py        automatic PGN archive of finished games
+  insights.py            cross-game mistake classification + persistent log
+  library_tab.py         library tab (archived games + training insights)
+  main_window.py         assembles everything (Play / Opening / Tactics / Library)
   data/openings.json.gz  opening tree + master-game statistics (committed)
 tools/
   build_opening_data.py  opening DB rebuild pipeline (dev-only, needs network)

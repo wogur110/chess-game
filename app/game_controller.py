@@ -30,6 +30,7 @@ from .eval_utils import (KEY_CATEGORIES, MOVE_LABELS, classify_loss,
                          move_accuracy, recommendation_probs,
                          score_to_expectation_white)
 from .i18n import tr
+from .insights import classify_tags, game_phase
 from .opening_book import load_book
 from .puzzle_store import Puzzle
 
@@ -126,9 +127,13 @@ class GameController(QObject):
     coachAlert = Signal(object)                      # CoachAlert
     threatsChanged = Signal(list)                    # opponent threats (moves)
     puzzlesReady = Signal(list)                      # list[Puzzle] from review
+    insightsReady = Signal(list)                     # mistake records from review
+    gameFinished = Signal()                          # live game reached an outcome
 
     # Move grades that get mined into personal tactics puzzles.
     MINE_CATEGORIES = ("miss", "mistake", "blunder")
+    # Don't archive trivial games (accidental quick mates, aborted starts).
+    LIBRARY_MIN_PLIES = 6
 
     AI_DELAY_MS = 150
     AI_VS_AI_DELAY_MS = 450
@@ -288,6 +293,9 @@ class GameController(QObject):
         self._arm_coach(mover)
         self.movesChanged.emit()
         self._after_position_change(move, animate)
+        if len(self._moves) >= self.LIBRARY_MIN_PLIES and self.human_colors() \
+                and self.outcome(self.live_board()) is not None:
+            self.gameFinished.emit()
         return True
 
     def _arm_coach(self, mover: chess.Color):
@@ -637,17 +645,20 @@ class GameController(QObject):
     # ---- Puzzle mining (feeds the Tactics tab) ---------------------------------
 
     def _mine_puzzles(self):
-        """Turn the reviewed game's human mistakes into puzzle candidates and
-        hand them to the engine for solution verification."""
+        """Turn the reviewed game's human mistakes into puzzle candidates
+        (verified by the engine) and into classified insight records for the
+        cross-game pattern log."""
         board = self._base.copy()
         today = datetime.date.today().isoformat()
         candidates: list = []
+        records: list = []
         for i, move in enumerate(self._moves):
             klass = self._classify_at(board, i, move)
             if klass in self.MINE_CATEGORIES and \
                     self.players[board.turn] == PlayerKind.HUMAN:
+                key = f"{board.epd()}|{move.uci()}"
                 candidates.append({
-                    "key": f"{board.epd()}|{move.uci()}",
+                    "key": key,
                     "fen": board.fen(),
                     "category": klass,
                     "played_san": self._san[i],
@@ -659,9 +670,22 @@ class GameController(QObject):
                         "mover": "White" if board.turn == chess.WHITE else "Black",
                     },
                 })
+                best = self._best[i] if i < len(self._best) else None
+                after = self._scores[i + 1] if i + 1 < len(self._scores) else None
+                records.append({
+                    "key": key,
+                    "date": today,
+                    "category": klass,
+                    "phase": game_phase(board),
+                    "tags": classify_tags(board, move,
+                                          best.move if best else None,
+                                          self._scores[i], after),
+                })
             board.push(move)
         if candidates:
             self.engine.request_puzzle_verify(candidates, self._game_id)
+        if records:
+            self.insightsReady.emit(records)
 
     def _on_puzzles_verified(self, deck_id: int, results: list):
         puzzles = [Puzzle(key=r["key"], fen=r["fen"], solution=r["solution"],
@@ -918,6 +942,10 @@ class GameController(QObject):
         game.headers["Black"] = self._player_name(chess.BLACK)
         outcome = self.outcome(self.live_board())
         game.headers["Result"] = outcome.result() if outcome else "*"
+        game.headers["PlyCount"] = str(len(self._moves))
+        opening = self.opening_name()
+        if opening:
+            game.headers["Opening"] = opening
 
         node: chess.pgn.GameNode = game
         for i, move in enumerate(self._moves):

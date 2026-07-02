@@ -290,15 +290,29 @@ class SuggestionsPanel(QWidget):
         self.setMouseTracking(True)
         self._suggestions: list = []
         self._hover_row = -1
+        self._display_enabled = True
+
+    def set_display_enabled(self, enabled: bool):
+        """Hide the moves (rows + tooltip) without losing them, so toggling
+        suggestions back on shows the current analysis instantly."""
+        self._display_enabled = enabled
+        self._refresh_tooltip()
+        self.update()
 
     def set_suggestions(self, suggestions: list):
         self._suggestions = list(suggestions)[:3]
+        self._refresh_tooltip()
+        self.update()
+
+    def _refresh_tooltip(self):
+        if not self._display_enabled:
+            self.setToolTip("")
+            return
         tooltip_lines = []
         for i, s in enumerate(self._suggestions):
             pv = " ".join(s.pv_san)
             tooltip_lines.append(f"{i + 1}. {s.san}  ({s.score_text})   {pv}")
         self.setToolTip("\n".join(tooltip_lines))
-        self.update()
 
     def _row_at(self, y: float) -> int:
         row = int(y // self.ROW_H)
@@ -307,7 +321,7 @@ class SuggestionsPanel(QWidget):
         return -1
 
     def mouseMoveEvent(self, event):
-        row = self._row_at(event.position().y())
+        row = self._row_at(event.position().y()) if self._display_enabled else -1
         if row != self._hover_row:
             self._hover_row = row
             self.setCursor(Qt.PointingHandCursor if row >= 0 else Qt.ArrowCursor)
@@ -319,6 +333,8 @@ class SuggestionsPanel(QWidget):
         self.update()
 
     def mousePressEvent(self, event):
+        if not self._display_enabled:
+            return
         row = self._row_at(event.position().y())
         if row >= 0:
             self.suggestionClicked.emit(self._suggestions[row].move)
@@ -327,6 +343,14 @@ class SuggestionsPanel(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         width = self.width()
+
+        if not self._display_enabled:
+            painter.setPen(QColor(theme.TEXT_DIM))
+            painter.drawText(self.rect(), Qt.AlignCenter,
+                             tr("Suggestions hidden — enable to see the "
+                                "engine's moves"))
+            painter.end()
+            return
 
         if not self._suggestions:
             painter.setPen(QColor(theme.TEXT_DIM))
@@ -629,8 +653,12 @@ class Sidebar(QWidget):
             "find the threats yourself, then check"))
         self.threats_checkbox.toggled.connect(self.threatsToggled)
         suggestions_header.addWidget(self.threats_checkbox)
-        self.hints_checkbox = QCheckBox(tr("Arrows"))
-        self.hints_checkbox.setChecked(True)
+        # Suggestions are opt-in: a normal game against the AI shouldn't
+        # show you the engine's moves unless you ask for them.
+        self.hints_checkbox = QCheckBox(tr("Suggestions"))
+        self.hints_checkbox.setToolTip(tr(
+            "Show the engine's top moves (arrows on the board and the "
+            "list below). Off by default so you can play a normal game."))
         self.hints_checkbox.toggled.connect(self.hintsToggled)
         suggestions_header.addWidget(self.hints_checkbox)
         layout.addLayout(suggestions_header)

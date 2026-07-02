@@ -341,4 +341,47 @@ TRANSLATIONS: dict[str, dict[str, str]] = {"ko": {
     "Rating {rating} · {themes}": "레이팅 {rating} · {themes}",
     "Puzzle pack not found — run tools/build_puzzle_pack.py.":
         "퍼즐 팩이 없습니다 — tools/build_puzzle_pack.py를 실행하세요.",
+
+    # ---- suggestions toggle ----
+    "Suggestions": "추천 수",
+    "Show the engine's top moves (arrows on the board and the "
+    "list below). Off by default so you can play a normal game.":
+        "엔진의 추천 수를 표시합니다 (보드 화살표 + 아래 목록).\n"
+        "일반적인 대국을 위해 기본값은 꺼짐입니다.",
+    "Suggestions hidden — enable to see the engine's moves":
+        "추천 수 숨김 — 켜면 엔진의 수를 볼 수 있습니다",
+
+    # ---- game library & insights ----
+    "🗂  Library": "🗂  라이브러리",
+    "GAMES": "게임 목록",
+    "TRAINING INSIGHTS": "훈련 인사이트",
+    "Open in Play tab": "대국 탭에서 열기",
+    "Delete": "삭제",
+    "Delete this game from the library?":
+        "이 게임을 라이브러리에서 삭제할까요?",
+    "Game saved to the library ({name})":
+        "게임을 라이브러리에 저장했습니다 ({name})",
+    "{n} archived game(s)": "보관된 게임 {n}판",
+    "{n} plies": "{n}수",
+    "No games yet — finished games are saved here automatically.":
+        "아직 게임이 없습니다 — 게임이 끝나면 자동으로 이곳에 저장됩니다.",
+    "No insights yet — play and analyze games; your recurring "
+    "mistake patterns will show up here.":
+        "아직 인사이트가 없습니다 — 게임을 두고 분석하면 반복되는 실수 "
+        "패턴이 여기에 나타납니다.",
+    "{total} analyzed mistakes — {categories}":
+        "분석된 실수 {total}개 — {categories}",
+    "Most common pattern: {tag} ({count}×), mostly in the {phase}.":
+        "가장 잦은 패턴: {tag} ({count}회), 주로 {phase}에서.",
+    "By phase:": "단계별:",
+    "By pattern:": "패턴별:",
+    "Opening": "오프닝",
+    "Middlegame": "미들게임",
+    "Endgame": "엔드게임",
+    "Hung a piece": "기물을 공짜로 내줌",
+    "Allowed a mate": "메이트를 허용함",
+    "Missed a mate": "메이트를 놓침",
+    "Missed a free capture": "공짜 기물을 안 잡음",
+    "Missed a fork": "포크를 놓침",
+    "Other": "기타",
 }}

@@ -20,6 +20,9 @@ from .engine_manager import EngineManager
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
 from .i18n import LANGUAGES, current_language, tr
 from .game_controller import GameController, PlayerKind
+from .game_library import GameLibrary
+from .insights import MistakeLog
+from .library_tab import LibraryTab
 from .opening_tab import OpeningStudyTab
 from .puzzle_store import PuzzleStore
 from .sidebar import CATEGORY_COLORS, EvalBar, Sidebar
@@ -153,12 +156,17 @@ class MainWindow(QMainWindow):
         self.opening_tab = OpeningStudyTab()
         self.puzzle_store = PuzzleStore()
         self.tactics_tab = TacticsTab(self.puzzle_store)
+        self.game_library = GameLibrary()
+        self.mistake_log = MistakeLog()
+        self.library_tab = LibraryTab(self.game_library, self.mistake_log)
         self.tabs.addTab(play_page, tr("♟  Play"))
         self.tabs.addTab(self.opening_tab, tr("📖  Opening Study"))
         self.tabs.addTab(self.tactics_tab, tr("🧩  Tactics"))
+        self.tabs.addTab(self.library_tab, tr("🗂  Library"))
         self.opening_tab.continueRequested.connect(self._on_continue_from_opening)
         self.tactics_tab.dueCountChanged.connect(self._on_due_count_changed)
         self.tactics_tab.refresh()   # sync the "(N due)" badge at startup
+        self.library_tab.openRequested.connect(self._on_open_library_game)
 
         self._build_menu()
         self._connect_controller()
@@ -227,6 +235,8 @@ class MainWindow(QMainWindow):
         c.engineMissing.connect(self._on_engine_error)
         c.coachAlert.connect(self._on_coach_alert)
         c.puzzlesReady.connect(self._on_puzzles_ready)
+        c.insightsReady.connect(self._on_insights_ready)
+        c.gameFinished.connect(self._on_game_finished)
         self.coach_banner.takeBackClicked.connect(self._on_coach_take_back)
         self.coach_banner.showWhyClicked.connect(self._on_coach_show_why)
         self.coach_banner.playOnClicked.connect(self._on_coach_play_on)
@@ -242,7 +252,7 @@ class MainWindow(QMainWindow):
         s.loadClicked.connect(self._load_game)
         s.navigateClicked.connect(self._on_navigate)
         s.autoplayToggled.connect(self.controller.set_autoplay)
-        s.hintsToggled.connect(self.board.set_show_hints)
+        s.hintsToggled.connect(self._on_suggestions_toggled)
         s.coachToggled.connect(self._on_coach_toggled)
         s.threatsToggled.connect(self._on_threats_toggled)
         self.controller.threatsChanged.connect(self.board.set_threats)
@@ -276,10 +286,9 @@ class MainWindow(QMainWindow):
         if current is self.opening_tab:
             if opening_slot is not None:
                 opening_slot()
-        elif current is self.tactics_tab:
-            pass   # the tactics tab has no history to navigate
-        else:
+        elif current is self.play_page:
             play_slot()
+        # other tabs (Tactics, Library) have no history to navigate
 
     # ---- Threat radar ----
 
@@ -369,6 +378,10 @@ class MainWindow(QMainWindow):
         self.sidebar.suggestions_panel.set_suggestions(suggestions)
         self.board.set_suggestions(suggestions)
 
+    def _on_suggestions_toggled(self, enabled: bool):
+        self.board.set_show_hints(enabled)
+        self.sidebar.suggestions_panel.set_display_enabled(enabled)
+
     def _on_engine_error(self, message: str):
         QMessageBox.warning(self, APP_NAME, message)
 
@@ -419,6 +432,31 @@ class MainWindow(QMainWindow):
             label = (tr("🧩  Tactics ({due} due)", due=due) if due
                      else tr("🧩  Tactics"))
             self.tabs.setTabText(index, label)
+
+    # ---- Game library & insights ----
+
+    def _on_game_finished(self):
+        path = self.game_library.auto_save(self.controller)
+        if path is not None:
+            self.library_tab.refresh_games()
+            self.statusBar().showMessage(
+                tr("Game saved to the library ({name})", name=path.name), 6000)
+
+    def _on_insights_ready(self, records: list):
+        if self.mistake_log.add(records):
+            self.library_tab.refresh_insights()
+
+    def _on_open_library_game(self, path: str):
+        try:
+            count = self.controller.load_pgn(path)
+        except Exception as exc:
+            QMessageBox.critical(self, APP_NAME,
+                                 tr("Could not load the game:\n{error}", error=exc))
+            return
+        self.tabs.setCurrentWidget(self.play_page)
+        self.statusBar().showMessage(
+            tr("Loaded {name} — {count} moves. Use ◀ ▶ to replay.",
+               name=Path(path).name, count=count), 8000)
 
     # ---- Sidebar events ----
 
@@ -573,8 +611,10 @@ class MainWindow(QMainWindow):
                                      c.difficulty_for(chess.BLACK))
         self.sidebar.sync_players(c.players[chess.WHITE], c.players[chess.BLACK])
 
-        hints = self._as_bool(s.value("hints"), True)
-        self.sidebar.hints_checkbox.setChecked(hints)   # drives the board too
+        # Suggestions default OFF: play a normal game unless asked otherwise.
+        hints = self._as_bool(s.value("hints"), False)
+        self.sidebar.hints_checkbox.setChecked(hints)
+        self._on_suggestions_toggled(hints)   # setChecked may not emit
         coach = self._as_bool(s.value("coach"), False)
         self.sidebar.coach_checkbox.setChecked(coach)   # drives the controller too
         threats = self._as_bool(s.value("threats"), False)
