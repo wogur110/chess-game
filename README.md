@@ -52,6 +52,12 @@ python main.py
 - **Spaced repetition** — puzzles are scheduled in Leitner boxes
   (1/3/7/21/60 days): clean solves move up, fails come back tomorrow. The
   tab badge shows what's due; **Review due** runs today's queue.
+- **Puzzle rush & themed practice** — a bundled starter pack of ~3,600
+  curated Lichess puzzles (CC0, fully offline): **Rush** gives you 3 strikes
+  / 3 minutes with escalating difficulty and a best-score record, and
+  **Practice** drills one motif at a time (fork, pin, back-rank mate, …),
+  easiest first — tactics volume from day one, before your own mistake deck
+  fills up.
 
 ### Review
 - **Chess.com-style game review** — move grades (**Brilliant `!!` / Great `!`
@@ -90,6 +96,7 @@ python main.py
 | Toggle coach warnings | "Coach" checkbox in the sidebar |
 | Peek at opponent threats | Hold `T` (or the "Threats" checkbox) |
 | Retrain your mistakes | Tactics tab → "Review due" |
+| Puzzle rush / themed practice | Tactics tab → "Start rush" / "Practice" |
 | Drill an opening | Opening Study tab → pick a line → "Start drill" |
 | Change the language | Options menu → Language / 언어 |
 
@@ -137,17 +144,22 @@ app/
   opening_book.py        bundled opening DB loader (EPD-keyed)
   opening_tab.py         opening study tab (browser, demo/drill, stats)
   puzzle_store.py        personal tactics deck (mined mistakes + Leitner scheduling)
-  tactics_tab.py         tactics tab (re-solve your own mistakes)
+  puzzle_pack.py         bundled starter-pack loader (rush / themed practice)
+  tactics_tab.py         tactics tab (mistake deck, puzzle rush, themed practice)
   main_window.py         assembles everything (Play / Opening Study / Tactics)
   data/openings.json.gz  opening tree + master-game statistics (committed)
 tools/
   build_opening_data.py  opening DB rebuild pipeline (dev-only, needs network)
+  build_puzzle_pack.py   puzzle starter-pack builder (dev-only, needs network)
 engines/                 Stockfish 18 binaries (Linux / Windows)
 saves/                   saved games and replay backups (PGN)
 ```
 
 ## Data sources
 
+- Rush/practice puzzles: the [Lichess puzzle database](https://database.lichess.org/#puzzles)
+  (CC0) — ~3,600 well-tested puzzles sampled across rating bands and themes;
+  rebuild with `python tools/build_puzzle_pack.py`.
 - Opening names/lines: [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) (CC0)
 - Win-rate statistics: [The Week in Chess](https://theweekinchess.com) weekly
   PGN archives (TWIC 1549–1648), games with both players rated 2200+. Many

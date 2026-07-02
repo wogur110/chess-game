@@ -52,6 +52,9 @@ def run_smoke(timeout_ms: int = 30000) -> int:
         if window.opening_tab.book is None:
             raise RuntimeError(
                 "opening database (app/data/openings.json.gz) failed to load")
+        if window.tactics_tab.pack is None or not len(window.tactics_tab.pack):
+            raise RuntimeError(
+                "puzzle pack (app/data/puzzles_rush.json.gz) failed to load")
 
         controller = window.controller
         # White (human) plays e4; the AI (black) must reply — a real round-trip

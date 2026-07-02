@@ -305,4 +305,40 @@ TRANSLATIONS: dict[str, dict[str, str]] = {"ko": {
     "the further right, the better you know them":
         "라이트너 박스: 각 복습 간격에 있는 퍼즐 수 — 오른쪽일수록 "
         "잘 아는 문제입니다",
+
+    # ---- puzzle rush / themed practice ----
+    "PUZZLE RUSH": "퍼즐 러시",
+    "All themes": "모든 테마",
+    "Mate in 1": "1수 메이트",
+    "Mate in 2": "2수 메이트",
+    "Back-rank mate": "백랭크 메이트",
+    "Fork": "포크",
+    "Pin": "핀",
+    "Skewer": "스큐어",
+    "Discovered attack": "디스커버드 어택",
+    "Hanging piece": "매달린 기물",
+    "Deflection": "디플렉션",
+    "Sacrifice": "희생",
+    "Start rush": "러시 시작",
+    "Practice": "테마 연습",
+    "Stop rush": "러시 중지",
+    "3 strikes or 3 minutes — puzzles get harder as you solve. "
+    "A wrong move fails the puzzle.":
+        "3스트라이크 또는 3분 — 풀수록 어려워집니다. "
+        "오답을 두면 그 퍼즐은 실패입니다.",
+    "Practice the selected theme untimed, easiest first.":
+        "선택한 테마를 시간 제한 없이 쉬운 것부터 연습합니다.",
+    "Best: {best}": "최고 기록: {best}",
+    "⏱ {time} · Score {score} · ✗ {strikes}/3":
+        "⏱ {time} · 점수 {score} · ✗ {strikes}/3",
+    "Solved! Next…": "정답! 다음 문제…",
+    "✗ Wrong — the answer was {line}.": "✗ 오답 — 정답은 {line}였습니다.",
+    "Rush over — score {score} (best {best}).":
+        "러시 종료 — 점수 {score} (최고 기록 {best}).",
+    "No more puzzles in this theme — pick another.":
+        "이 테마의 퍼즐을 모두 풀었습니다 — 다른 테마를 골라 보세요.",
+    "Rating {rating}": "레이팅 {rating}",
+    "Rating {rating} · {themes}": "레이팅 {rating} · {themes}",
+    "Puzzle pack not found — run tools/build_puzzle_pack.py.":
+        "퍼즐 팩이 없습니다 — tools/build_puzzle_pack.py를 실행하세요.",
 }}

@@ -9,24 +9,32 @@ solution line.
 
 from __future__ import annotations
 
+import random
 from typing import Optional
 
 import chess
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget,
-                               QListWidgetItem, QPushButton, QScrollArea,
-                               QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel,
+                               QListWidget, QListWidgetItem, QPushButton,
+                               QScrollArea, QSplitter, QVBoxLayout, QWidget)
 
 from . import theme
 from .board_widget import BoardWidget
 from .eval_utils import MOVE_LABELS, MOVE_SYMBOLS
 from .i18n import tr
+from .puzzle_pack import THEME_LABELS, load_pack
 from .puzzle_store import BOX_INTERVALS, Puzzle, PuzzleStore
 from .sidebar import CATEGORY_COLORS
 
 WRONG_FLASH_MS = 650
 REPLY_DELAY_MS = 450
+
+# Puzzle rush: 3 strikes or 3 minutes, difficulty escalates per solve.
+RUSH_SECONDS = 180
+RUSH_START_RATING = 750
+RUSH_STEP = 60
+RUSH_STRIKES = 3
 
 
 class _Hint:
@@ -43,7 +51,9 @@ class TacticsTab(QWidget):
     def __init__(self, store: PuzzleStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.store = store
-        self._puzzle: Optional[Puzzle] = None
+        self.pack = load_pack()
+        self._puzzle = None                 # Puzzle (deck) or PackPuzzle
+        self._mode = "deck"                 # "deck" | "rush" | "practice"
         self._board = chess.Board()
         self._step = 0
         self._wrong = 0
@@ -53,6 +63,16 @@ class TacticsTab(QWidget):
         self._session_queue: list = []      # keys still to review this session
         self._session_total = 0
         self._session_clean = 0
+        self._rush_score = 0
+        self._rush_strikes = 0
+        self._rush_target = RUSH_START_RATING
+        self._rush_seconds = 0
+        self._rush_used: set = set()
+        self._rush_timer = QTimer(self)
+        self._rush_timer.setInterval(1000)
+        self._rush_timer.timeout.connect(self._rush_tick)
+        self._practice_list: list = []
+        self._practice_index = 0
 
         root = QHBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
@@ -92,6 +112,43 @@ class TacticsTab(QWidget):
             "Leitner boxes: how many puzzles sit at each review interval — "
             "the further right, the better you know them"))
         deck_layout.addWidget(self.boxes_label)
+
+        # Puzzle rush / themed practice (bundled starter pack)
+        rush_title = QLabel(tr("PUZZLE RUSH"))
+        rush_title.setObjectName("SectionTitle")
+        deck_layout.addWidget(rush_title)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem(tr("All themes"), None)
+        if self.pack is not None:
+            for key, label in THEME_LABELS.items():
+                if self.pack.theme_counts.get(key):
+                    self.theme_combo.addItem(tr(label), key)
+        deck_layout.addWidget(self.theme_combo)
+        rush_row = QHBoxLayout()
+        rush_row.setSpacing(8)
+        self.rush_button = QPushButton(tr("Start rush"))
+        self.rush_button.setToolTip(tr(
+            "3 strikes or 3 minutes — puzzles get harder as you solve. "
+            "A wrong move fails the puzzle."))
+        self.rush_button.clicked.connect(self._start_rush)
+        rush_row.addWidget(self.rush_button)
+        self.practice_button = QPushButton(tr("Practice"))
+        self.practice_button.setToolTip(tr(
+            "Practice the selected theme untimed, easiest first."))
+        self.practice_button.clicked.connect(self._start_practice)
+        rush_row.addWidget(self.practice_button)
+        deck_layout.addLayout(rush_row)
+        self.rush_best_label = QLabel("")
+        self.rush_best_label.setObjectName("SubtleLabel")
+        deck_layout.addWidget(self.rush_best_label)
+        if self.pack is None:
+            self.rush_best_label.setText(tr(
+                "Puzzle pack not found — run tools/build_puzzle_pack.py."))
+            for widget in (self.theme_combo, self.rush_button,
+                           self.practice_button):
+                widget.setEnabled(False)
+        else:
+            self._update_rush_best_label()
         splitter.addWidget(deck_panel)
 
         # Center: board
@@ -119,6 +176,11 @@ class TacticsTab(QWidget):
         side = QVBoxLayout(panel_content)
         side.setContentsMargins(16, 14, 16, 14)
         side.setSpacing(9)
+
+        self.rush_info_label = QLabel("")
+        self.rush_info_label.setObjectName("StatusLabel")
+        self.rush_info_label.setVisible(False)
+        side.addWidget(self.rush_info_label)
 
         self.status_label = QLabel("")
         self.status_label.setObjectName("StatusLabel")
@@ -171,7 +233,7 @@ class TacticsTab(QWidget):
 
     def refresh(self):
         """Rebuild the deck list (after mining, solving or scheduling)."""
-        current = self._puzzle.key if self._puzzle else None
+        current = getattr(self._puzzle, "key", None)
         self.deck_list.blockSignals(True)
         self.deck_list.clear()
         puzzles = sorted(self.store.all(),
@@ -236,6 +298,7 @@ class TacticsTab(QWidget):
         due = self.store.due_puzzles()
         if not due:
             return
+        self._exit_pack_modes()
         self._session_queue = [p.key for p in due]
         self._session_total = len(due)
         self._session_clean = 0
@@ -274,7 +337,8 @@ class TacticsTab(QWidget):
     # ---- solving ----
 
     def _on_item_clicked(self, item: QListWidgetItem):
-        # Picking a puzzle by hand leaves any running review session.
+        # Picking a puzzle by hand leaves any running session or rush.
+        self._exit_pack_modes()
         self._session_queue = []
         self._session_total = 0
         self.next_button.setText(tr("Next puzzle →"))
@@ -282,7 +346,9 @@ class TacticsTab(QWidget):
         if puzzle is not None:
             self._start_puzzle(puzzle)
 
-    def _start_puzzle(self, puzzle: Puzzle):
+    def _begin_solving(self, puzzle):
+        """Shared setup for deck puzzles and pack puzzles alike — `puzzle`
+        only needs .fen / .solution / .solution_san."""
         self._generation += 1
         self._puzzle = puzzle
         self._board = chess.Board(puzzle.fen)
@@ -296,10 +362,20 @@ class TacticsTab(QWidget):
         self.board_widget.set_movable_colors([solver])
         self.board_widget.set_suggestions([])
         side_name = tr("White") if solver == chess.WHITE else tr("Black")
-        symbol = MOVE_SYMBOLS.get(puzzle.category, "?")
-        label = tr(MOVE_LABELS.get(puzzle.category, puzzle.category))
         self.status_label.setText(
             tr("{side} to move — find the best move.", side=side_name))
+        self.solution_label.setVisible(False)
+        in_rush = self._mode == "rush"
+        self.hint_button.setEnabled(not in_rush)
+        self.solution_button.setEnabled(not in_rush)
+        self.remove_button.setEnabled(self._mode == "deck")
+        self.next_button.setEnabled(True)
+
+    def _start_puzzle(self, puzzle: Puzzle):
+        self._exit_pack_modes()
+        self._begin_solving(puzzle)
+        symbol = MOVE_SYMBOLS.get(puzzle.category, "?")
+        label = tr(MOVE_LABELS.get(puzzle.category, puzzle.category))
         source = puzzle.source
         self.origin_label.setText(
             tr("{label} {symbol} from your game {white} vs {black} ({date}), "
@@ -308,11 +384,6 @@ class TacticsTab(QWidget):
                white=source.get("white", "?"), black=source.get("black", "?"),
                date=source.get("date", "?"),
                move_no=source.get("move_no", "?"), played=puzzle.played_san))
-        self.solution_label.setVisible(False)
-        for button in (self.hint_button, self.solution_button,
-                       self.remove_button):
-            button.setEnabled(True)
-        self.next_button.setEnabled(True)
 
     def _on_board_move(self, move: chess.Move):
         puzzle = self._puzzle
@@ -321,6 +392,8 @@ class TacticsTab(QWidget):
             return
         if move.uci() == puzzle.solution[self._step]:
             self._accept_move(move)
+        elif self._mode == "rush":
+            self._rush_fail(move)
         else:
             self._reject_move(move)
 
@@ -366,8 +439,12 @@ class TacticsTab(QWidget):
         puzzle = self._puzzle
         self._finished = True
         self.board_widget.set_movable_colors([])
+        if self._mode == "rush":
+            self._rush_solved()   # a rush puzzle only finishes by solving
+            return
         clean = solved and self._wrong == 0 and not self._used_hint
-        self.store.record_attempt(puzzle.key, solved, clean)
+        if self._mode == "deck":
+            self.store.record_attempt(puzzle.key, solved, clean)
         if clean:
             self._session_clean += 1 if self._in_session else 0
         if solved:
@@ -384,7 +461,8 @@ class TacticsTab(QWidget):
         self.solution_label.setVisible(True)
         self.hint_button.setEnabled(False)
         self.solution_button.setEnabled(False)
-        self.refresh()
+        if self._mode == "deck":
+            self.refresh()
 
     def _on_hint(self):
         puzzle = self._puzzle
@@ -404,13 +482,21 @@ class TacticsTab(QWidget):
         self._finish(solved=False)
 
     def _on_next(self):
-        """Serve the session queue while reviewing, otherwise jump to the
-        first due/unsolved puzzle other than the current one."""
+        """Serve the session queue while reviewing, the next practice puzzle
+        while practicing, stop a rush — otherwise jump to the first
+        due/unsolved deck puzzle other than the current one."""
+        if self._mode == "rush":
+            self._end_rush()
+            return
+        if self._mode == "practice":
+            self._practice_index += 1
+            self._serve_practice()
+            return
         if self._in_session:
             self._serve_next_due()
             self.refresh()
             return
-        current = self._puzzle.key if self._puzzle else None
+        current = getattr(self._puzzle, "key", None)
         candidates = [p for p in self.store.due_puzzles()
                       if p.key != current] or \
                      [p for p in self.store.all()
@@ -423,7 +509,7 @@ class TacticsTab(QWidget):
                 "Deck clear — nothing due. Analyze more games to add puzzles."))
 
     def _on_remove(self):
-        if self._puzzle is None:
+        if self._puzzle is None or self._mode != "deck":
             return
         self.store.remove(self._puzzle.key)
         self._puzzle = None
@@ -431,3 +517,158 @@ class TacticsTab(QWidget):
         self.board_widget.set_movable_colors([])
         self.refresh()
         self._set_idle_state()
+
+    # ---- puzzle rush / themed practice (bundled starter pack) ----
+
+    def _exit_pack_modes(self):
+        """Leave rush/practice (stopping the clock) and return to deck mode."""
+        if self._mode == "rush":
+            self._rush_timer.stop()
+            self.rush_info_label.setVisible(False)
+        self._mode = "deck"
+        self.next_button.setText(tr("Next puzzle →"))
+
+    def _update_rush_best_label(self):
+        best = int(QSettings().value("rush_best", 0))
+        self.rush_best_label.setText(tr("Best: {best}", best=best))
+
+    def _set_pack_origin(self, puzzle, with_themes: bool):
+        themes = ", ".join(tr(THEME_LABELS[t]) for t in puzzle.themes
+                           if t in THEME_LABELS)
+        # In a rush the motif would be a spoiler — show the rating only.
+        self.origin_label.setText(
+            tr("Rating {rating} · {themes}", rating=puzzle.rating,
+               themes=themes) if with_themes else
+            tr("Rating {rating}", rating=puzzle.rating))
+
+    # -- rush --
+
+    def _start_rush(self):
+        if self.pack is None or not len(self.pack):
+            return
+        self._exit_pack_modes()
+        self._session_queue = []
+        self._session_total = 0
+        self._mode = "rush"
+        self._rush_score = 0
+        self._rush_strikes = 0
+        self._rush_target = RUSH_START_RATING
+        self._rush_seconds = RUSH_SECONDS
+        self._rush_used = set()
+        self._rush_timer.start()
+        self.rush_info_label.setVisible(True)
+        self._update_rush_info()
+        self._serve_rush_puzzle()
+
+    def _serve_rush_puzzle(self):
+        pool = self.pack.in_rating_window(
+            self._rush_target - 100, self._rush_target + 150, self._rush_used)
+        if not pool:
+            unused = [p for p in self.pack.puzzles if p not in self._rush_used]
+            if not unused:
+                self._end_rush()
+                return
+            pool = sorted(unused,
+                          key=lambda p: abs(p.rating - self._rush_target))[:20]
+        puzzle = random.choice(pool)
+        self._rush_used.add(puzzle)
+        self._begin_solving(puzzle)
+        self._set_pack_origin(puzzle, with_themes=False)
+        self.next_button.setText(tr("Stop rush"))
+
+    def _rush_solved(self):
+        self._rush_score += 1
+        self._rush_target += RUSH_STEP
+        self._update_rush_info()
+        self.status_label.setText(tr("Solved! Next…"))
+        generation = self._generation
+        QTimer.singleShot(600, lambda: self._rush_advance(generation))
+
+    def _rush_fail(self, move: chess.Move):
+        """In a rush the first wrong move fails the puzzle — no retries."""
+        self._finished = True
+        self._rush_strikes += 1
+        self.board_widget.set_movable_colors([])
+        correct = chess.Move.from_uci(self._puzzle.solution[self._step])
+        self.board_widget.set_suggestions([_Hint(correct, 1.0)])
+        line = " ".join(self._puzzle.solution_san)
+        self.status_label.setText(
+            tr("✗ Wrong — the answer was {line}.", line=line))
+        self._update_rush_info()
+        generation = self._generation
+        QTimer.singleShot(1400, lambda: self._rush_advance(generation))
+
+    def _rush_advance(self, generation: int):
+        if generation != self._generation or self._mode != "rush":
+            return
+        if self._rush_strikes >= RUSH_STRIKES or self._rush_seconds <= 0:
+            self._end_rush()
+        else:
+            self._serve_rush_puzzle()
+
+    def _rush_tick(self):
+        if self._mode != "rush":
+            self._rush_timer.stop()
+            return
+        self._rush_seconds -= 1
+        self._update_rush_info()
+        if self._rush_seconds <= 0:
+            self._end_rush()
+
+    def _update_rush_info(self):
+        minutes, seconds = divmod(max(0, self._rush_seconds), 60)
+        self.rush_info_label.setText(
+            tr("⏱ {time} · Score {score} · ✗ {strikes}/3",
+               time=f"{minutes}:{seconds:02d}", score=self._rush_score,
+               strikes=self._rush_strikes))
+
+    def _end_rush(self):
+        self._rush_timer.stop()
+        self._generation += 1          # cancel any pending advance/reply
+        self._mode = "deck"
+        self._puzzle = None
+        self._finished = True
+        self.board_widget.set_movable_colors([])
+        self.board_widget.set_suggestions([])
+        self.rush_info_label.setVisible(False)
+        self.next_button.setText(tr("Next puzzle →"))
+        best = int(QSettings().value("rush_best", 0))
+        if self._rush_score > best:
+            best = self._rush_score
+            QSettings().setValue("rush_best", best)
+        self._update_rush_best_label()
+        self.status_label.setText(
+            tr("Rush over — score {score} (best {best}).",
+               score=self._rush_score, best=best))
+        self.origin_label.setText("")
+        self.solution_label.setVisible(False)
+        for button in (self.hint_button, self.solution_button,
+                       self.remove_button):
+            button.setEnabled(False)
+
+    # -- themed practice --
+
+    def _start_practice(self):
+        if self.pack is None or not len(self.pack):
+            return
+        self._exit_pack_modes()
+        self._session_queue = []
+        self._session_total = 0
+        theme = self.theme_combo.currentData()
+        self._practice_list = self.pack.by_theme(theme)
+        if not self._practice_list:
+            return
+        self._mode = "practice"
+        self._practice_index = 0
+        self._serve_practice()
+
+    def _serve_practice(self):
+        if self._practice_index >= len(self._practice_list):
+            self._puzzle = None
+            self.board_widget.set_movable_colors([])
+            self.status_label.setText(
+                tr("No more puzzles in this theme — pick another."))
+            return
+        puzzle = self._practice_list[self._practice_index]
+        self._begin_solving(puzzle)
+        self._set_pack_origin(puzzle, with_themes=True)

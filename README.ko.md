@@ -50,6 +50,11 @@ python main.py
 - **간격 반복** — 퍼즐은 라이트너 박스(1/3/7/21/60일)로 스케줄됩니다:
   깔끔하게 풀면 다음 박스로, 실패하면 내일 다시. 탭 배지가 복습 대기 수를
   보여주고 **복습하기** 버튼이 오늘의 큐를 진행합니다.
+- **퍼즐 러시 & 테마 연습** — 엄선된 Lichess 퍼즐 ~3,600개를 내장한 스타터
+  팩(CC0, 완전 오프라인): **러시**는 3스트라이크/3분 안에 점점 어려워지는
+  퍼즐을 풀며 최고 기록을 남기고, **테마 연습**은 포크·핀·백랭크 메이트 등
+  모티프 하나를 쉬운 것부터 집중 훈련합니다 — 내 실수 덱이 차기 전 첫날부터
+  전술 훈련량을 확보할 수 있습니다.
 
 ### 리뷰
 - **chess.com 스타일 게임 리뷰** — 수 등급(**브릴리언트 `!!` / 훌륭한 수 `!`
@@ -88,6 +93,7 @@ python main.py
 | 코치 경고 켜기/끄기 | 사이드바의 "코치" 체크박스 |
 | 상대 위협 확인 | `T` 키 홀드 (항상 켜려면 "위협" 체크박스) |
 | 내 실수 재훈련 | 전술 탭 → "복습하기" |
+| 퍼즐 러시 / 테마 연습 | 전술 탭 → "러시 시작" / "테마 연습" |
 | 오프닝 드릴 | 오프닝 학습 탭 → 라인 선택 → "드릴 시작" |
 | 언어 변경 | 옵션 메뉴 → Language / 언어 |
 
@@ -135,17 +141,22 @@ app/
   opening_book.py        내장 오프닝 DB 로더 (EPD 키)
   opening_tab.py         오프닝 학습 탭 (브라우저, 데모/드릴, 통계)
   puzzle_store.py        개인 전술 덱 (채굴된 실수 + 라이트너 스케줄링)
-  tactics_tab.py         전술 탭 (내 실수 다시 풀기)
+  puzzle_pack.py         내장 스타터 팩 로더 (러시 / 테마 연습)
+  tactics_tab.py         전술 탭 (실수 덱, 퍼즐 러시, 테마 연습)
   main_window.py         전체 조립 (대국 / 오프닝 학습 / 전술)
   data/openings.json.gz  오프닝 트리 + 마스터 게임 통계 (커밋됨)
 tools/
   build_opening_data.py  오프닝 DB 재구축 파이프라인 (개발용, 네트워크 필요)
+  build_puzzle_pack.py   퍼즐 스타터 팩 빌더 (개발용, 네트워크 필요)
 engines/                 Stockfish 18 바이너리 (Linux / Windows)
 saves/                   저장된 게임과 리플레이 백업 (PGN)
 ```
 
 ## 데이터 출처
 
+- 러시/연습 퍼즐: [Lichess 퍼즐 데이터베이스](https://database.lichess.org/#puzzles)
+  (CC0) — 레이팅 구간과 테마별로 샘플링한 검증된 퍼즐 ~3,600개.
+  재구축: `python tools/build_puzzle_pack.py`.
 - 오프닝 이름/라인: [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) (CC0)
 - 승률 통계: [The Week in Chess](https://theweekinchess.com) 주간 PGN 아카이브
   (TWIC 1549–1648), 양쪽 모두 2200+ 레이팅인 게임만 집계. 아카이브를 무료로
