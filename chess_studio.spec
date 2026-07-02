@@ -19,15 +19,17 @@ a = Analysis(
     pathex=[],
     binaries=engine_binaries,
     datas=[("app/data/openings.json.gz", "app/data"),
-           ("app/data/puzzles_rush.json.gz", "app/data")],
+           ("app/data/puzzles_rush.json.gz", "app/data"),
+           ("app/data/sounds", "app/data/sounds")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
         # Trim Qt modules the app does not use to keep the build small.
-        "PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick",
-        "PySide6.QtMultimedia", "PySide6.QtWebEngineCore",
+        # QtMultimedia stays IN: it powers the move sounds.
+        "PySide6.QtQml", "PySide6.QtQuick",
+        "PySide6.QtWebEngineCore",
         "PySide6.QtWebEngineWidgets", "PySide6.QtPdf", "PySide6.Qt3DCore",
         "PySide6.QtCharts", "PySide6.QtDataVisualization",
     ],

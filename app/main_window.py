@@ -26,6 +26,7 @@ from .library_tab import LibraryTab
 from .opening_tab import OpeningStudyTab
 from .puzzle_store import PuzzleStore
 from .sidebar import CATEGORY_COLORS, EvalBar, Sidebar
+from .sounds import player as sound_player
 from .tactics_tab import TacticsTab
 
 
@@ -209,6 +210,24 @@ class MainWindow(QMainWindow):
             group.addAction(action)
             language_menu.addAction(action)
 
+        sound_menu = options_menu.addMenu(tr("Sound"))
+        self.sound_action = QAction(tr("Sound on"), self)
+        self.sound_action.setCheckable(True)
+        self.sound_action.toggled.connect(self._on_sound_toggled)
+        sound_menu.addAction(self.sound_action)
+        sound_menu.addSeparator()
+        self._volume_actions = {}
+        volume_group = QActionGroup(self)
+        volume_group.setExclusive(True)
+        for percent in (25, 50, 75, 100):
+            action = QAction(tr("Volume {percent}%", percent=percent), self)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda _=False, p=percent: self._on_volume_selected(p))
+            volume_group.addAction(action)
+            sound_menu.addAction(action)
+            self._volume_actions[percent] = action
+
     def _on_language_selected(self, code: str):
         if code == current_language():
             return
@@ -219,6 +238,18 @@ class MainWindow(QMainWindow):
             self, APP_NAME,
             "Restart Chess Studio to apply the language change.\n"
             "언어 변경은 Chess Studio를 다시 시작하면 적용됩니다.")
+
+    def _on_sound_toggled(self, enabled: bool):
+        sound_player().set_enabled(enabled)
+        QSettings().setValue("sound/enabled", enabled)
+        if enabled:
+            sound_player().play("move")   # instant feedback at this volume
+
+    def _on_volume_selected(self, percent: int):
+        sound_player().set_volume(percent / 100.0)
+        QSettings().setValue("sound/volume", percent)
+        if sound_player().enabled:
+            sound_player().play("move")
 
     def _connect_controller(self):
         c = self.controller
@@ -615,6 +646,20 @@ class MainWindow(QMainWindow):
         hints = self._as_bool(s.value("hints"), False)
         self.sidebar.hints_checkbox.setChecked(hints)
         self._on_suggestions_toggled(hints)   # setChecked may not emit
+
+        # Sound defaults OFF at 50% volume; applied silently at startup.
+        try:
+            volume = int(s.value("sound/volume", 50))
+        except (TypeError, ValueError):
+            volume = 50
+        volume = volume if volume in self._volume_actions else 50
+        sound_player().set_volume(volume / 100.0)
+        self._volume_actions[volume].setChecked(True)
+        sound_enabled = self._as_bool(s.value("sound/enabled"), False)
+        sound_player().set_enabled(sound_enabled)
+        self.sound_action.blockSignals(True)   # no test beep at startup
+        self.sound_action.setChecked(sound_enabled)
+        self.sound_action.blockSignals(False)
         coach = self._as_bool(s.value("coach"), False)
         self.sidebar.coach_checkbox.setChecked(coach)   # drives the controller too
         threats = self._as_bool(s.value("threats"), False)

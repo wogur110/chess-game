@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QToolButton, QVBoxLa
 
 from . import theme
 from .i18n import tr
+from .sounds import player as sound_player
 
 
 # ---- Piece sprites -----------------------------------------------------------
@@ -132,6 +133,20 @@ class BoardWidget(QWidget):
 
     # ---- Public API ----
 
+    @staticmethod
+    def _sound_for(prev: chess.Board, move: chess.Move) -> str:
+        """'capture' or 'move', judged against the pre-move board."""
+        moving = prev.piece_at(move.from_square)
+        captured = prev.piece_at(move.to_square)
+        if moving is not None and captured is not None and \
+                captured.color != moving.color:
+            return "capture"
+        if moving is not None and moving.piece_type == chess.PAWN and \
+                captured is None and \
+                chess.square_file(move.from_square) != chess.square_file(move.to_square):
+            return "capture"   # en passant
+        return "move"
+
     def set_position(self, board: chess.Board, last_move: Optional[chess.Move],
                      animate: bool):
         prev = self._board
@@ -139,6 +154,8 @@ class BoardWidget(QWidget):
         self._last_move = last_move
         self._coach_arrow = None
         self._threat_moves = []   # stale for the new position; re-sent by analysis
+        if last_move is not None and prev.piece_at(last_move.from_square) is not None:
+            sound_player().play(self._sound_for(prev, last_move))
         self._clear_selection()
         self._anim.stop()
         self._anim_move = None

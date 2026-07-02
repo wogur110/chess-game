@@ -91,8 +91,12 @@ python main.py
 ### Interface
 - Dark modern GUI (PySide6/Qt), drag & drop or click-click moves.
 - **English / 한국어** — switch in *Options → Language / 언어*.
-- Remembers players, difficulty, checkboxes, tab, window size and language.
-- Fully offline; no sound.
+- **Move sounds** — synthesized wooden move/capture sounds (nothing to
+  license, fully offline); off by default, with an on/off switch and volume
+  control in *Options → Sound*.
+- Remembers players, difficulty, checkboxes, sound, tab, window size and
+  language.
+- Fully offline.
 
 ## Controls
 
@@ -113,6 +117,7 @@ python main.py
 | Browse archived games / insights | Library tab (finished games auto-save there) |
 | Drill an opening | Opening Study tab → pick a line → "Start drill" |
 | Change the language | Options menu → Language / 언어 |
+| Move sounds on/off, volume | Options menu → Sound (off by default) |
 
 ## Building
 
@@ -160,6 +165,7 @@ app/
   puzzle_store.py        personal tactics deck (mined mistakes + Leitner scheduling)
   puzzle_pack.py         bundled starter-pack loader (rush / themed practice)
   puzzle_rating.py       Elo-style estimated puzzle rating (persistent)
+  sounds.py              move-sound player (QtMultimedia, lazy, optional)
   tactics_tab.py         tactics tab (mistake deck, puzzle rush, themed practice)
   game_library.py        automatic PGN archive of finished games
   insights.py            cross-game mistake classification + persistent log
@@ -169,6 +175,7 @@ app/
 tools/
   build_opening_data.py  opening DB rebuild pipeline (dev-only, needs network)
   build_puzzle_pack.py   puzzle starter-pack builder (dev-only, needs network)
+  build_sounds.py        move-sound synthesizer (dev-only, no downloads)
 engines/                 Stockfish 18 binaries (Linux / Windows)
 saves/                   saved games and replay backups (PGN)
 ```
